@@ -82,7 +82,6 @@ export default function Login() {
    const { data: { session } } = await supabase.auth.getSession();
    
    if (session?.user) {
-      // 🔥 Ajuste menor: asegurar que busque el rol en el conjunto actual
       const idActualSession = sessionStorage.getItem('copropiedad_id') || copropiedadId;
       const { data: perfil } = await supabase.from('usuarios').select('rol, copropiedad_id').eq('id', session.user.id).eq('copropiedad_id', idActualSession).maybeSingle();
       const rolReal = perfil?.rol || session.user.user_metadata?.rol;
@@ -101,7 +100,7 @@ export default function Login() {
     }
   };
 
-  // 🔥 LÓGICA DE LOGIN MEJORADA (MANTIENE TU DISEÑO) 🔥
+  // 🔥 LÓGICA DE LOGIN ESTRICTA (MANTIENE TU DISEÑO) 🔥
   const iniciarSesion = async (e) => {
     e.preventDefault();
     if (!email || !password) return Swal.fire('Atención', 'Ingresa correo y contraseña', 'warning');
@@ -111,7 +110,7 @@ export default function Login() {
       if (error) throw error;
       
       if (data.user) {
-        // 1. Verificamos si tiene perfil en el conjunto de la URL actual
+        // Validamos que el usuario pertenezca a ESTA copropiedad
         const { data: perfil } = await supabase
           .from('usuarios')
           .select('rol, copropiedad_id')
@@ -119,72 +118,29 @@ export default function Login() {
           .eq('copropiedad_id', copropiedadId)
           .maybeSingle();
 
-        let rolFinal = 'usuario';
-
-        // 2. Si entra, pero no tiene perfil en ESTE conjunto (viene de otro)
         if (!perfil) {
-          const { value: formValues } = await Swal.fire({
-            title: `¡Bienvenido a ${config.nombreEmpresa}!`,
-            html: `
-              <p style="font-size: 0.9em; margin-bottom: 15px;">Detectamos que ya eres usuario de nuestra red. Confirma tus datos para vincularte a este conjunto:</p>
-              <input id="swal-inmueble" class="swal2-input" placeholder="Torre/Apto (Ej: T1-101)">
-              <input id="swal-celular" class="swal2-input" placeholder="Tu Celular">
-            `,
-            focusConfirm: false,
-            confirmButtonText: 'Vincularme',
-            confirmButtonColor: config.color1,
-            preConfirm: () => {
-              const inm = document.getElementById('swal-inmueble').value;
-              const cel = document.getElementById('swal-celular').value;
-              if (!inm || !cel) return Swal.showValidationMessage('Ambos campos son obligatorios');
-              return { inmueble: inm, celular: cel };
-            }
+          // Si el usuario existe en el sistema pero NO en esta copropiedad, lo sacamos
+          await supabase.auth.signOut();
+          setCargando(false);
+          return Swal.fire({
+            title: 'Acceso Denegado',
+            text: 'Tu cuenta está registrada en otra copropiedad. Por políticas de seguridad de LumenGroup, no se permite el acceso a múltiples conjuntos con el mismo correo.',
+            icon: 'error',
+            confirmButtonColor: config.color1
           });
-
-          if (formValues) {
-            // Le creamos su registro en la tabla usuarios para este nuevo conjunto
-            const { error: errorInsert } = await supabase.from('usuarios').insert({
-              id: data.user.id,
-              email: data.user.email,
-              nombre: data.user.user_metadata?.nombre || 'Usuario',
-              celular: formValues.celular,
-              inmueble: formValues.inmueble.trim(),
-              inmueble_id: formValues.inmueble.trim(),
-              rol: 'usuario',
-              copropiedad_id: copropiedadId,
-              tipo_residente: 'Propietario'
-            });
-
-            if (errorInsert) throw errorInsert;
-            Swal.fire('¡Éxito!', 'Perfil vinculado. Ingresando...', 'success');
-            rolFinal = 'usuario';
-          } else {
-            // Si cancela el modal, cerramos sesión
-            await supabase.auth.signOut();
-            setCargando(false);
-            return;
-          }
-        } else {
-          rolFinal = perfil.rol;
         }
 
-        // 3. Redirección normal
         sessionStorage.setItem('copropiedad_id', copropiedadId);
-
-        if (rolFinal === 'agente') {
-          navigate('/admin');
-        } else if (rolFinal === 'vigilante') {
-          navigate('/panel-vigilancia'); 
-        } else {
-          navigate('/panel-residente');
-        }
+        if (perfil.rol === 'agente') navigate('/admin');
+        else if (perfil.rol === 'vigilante') navigate('/panel-vigilancia');
+        else navigate('/panel-residente');
       }
     } catch (err) {
       Swal.fire('Error', 'Correo o contraseña incorrectos', 'error');
     } finally { setCargando(false); }
   };
 
-  // 🔥 LÓGICA DE REGISTRO MEJORADA (MANTIENE TU DISEÑO) 🔥
+  // 🔥 LÓGICA DE REGISTRO BLINDADA CONTRA DUPLICADOS Y ERROR 500 🔥
   const registrarUsuario = async (e) => {
     e.preventDefault();
     if (!email || !password || !nombre || !rol || !inmueble || !celular) return Swal.fire('Campos incompletos', 'Diligencia todos los datos.', 'warning');
@@ -197,28 +153,42 @@ export default function Login() {
         setCargando(false); return Swal.fire('Acceso Denegado', 'Código secreto incorrecto.', 'error');
       }
 
-      if (rol === 'agente') {
-        const { data: adminExiste } = await supabase.rpc('check_admin_exists', { p_copropiedad_id: copropiedadId });
-        if (adminExiste) { setCargando(false); return Swal.fire('Denegado', 'Ya existe un administrador para este conjunto.', 'warning'); }
-      }
+      // 1. VERIFICACIÓN GLOBAL DE CORREO (Para evitar el Error 500 y duplicidad)
+      const { data: globalUser } = await supabase
+        .from('usuarios')
+        .select('copropiedad_id')
+        .eq('email', email.trim().toLowerCase())
+        .maybeSingle();
 
-      // 🔥 VALIDACIÓN DE INMUEBLE ÚNICO POR CONJUNTO 🔥
-      if (rol === 'usuario') {
-        const { data: inmuebleExiste } = await supabase
-          .from('usuarios')
-          .select('id')
-          .eq('copropiedad_id', copropiedadId)
-          .ilike('inmueble', inmueble.trim())
-          .maybeSingle();
-          
-        if (inmuebleExiste) {
-          setCargando(false);
-          return Swal.fire('Registro Denegado', `El inmueble ${inmueble} ya tiene un usuario registrado. Solo se permite una cuenta por inmueble.`, 'error');
+      if (globalUser) {
+        setCargando(false);
+        if (globalUser.copropiedad_id === copropiedadId) {
+          return Swal.fire('Ya registrado', 'Este correo ya tiene una cuenta en esta copropiedad. Ve al login e inicia sesión.', 'info');
+        } else {
+          return Swal.fire({
+            title: 'No se permite duplicidad',
+            text: 'Este correo ya está registrado en otra copropiedad de nuestra red. Por políticas de seguridad, no puedes crear múltiples perfiles.',
+            icon: 'error',
+            confirmButtonColor: config.color1
+          });
         }
       }
 
-  // Guardamos la info de Habeas Data también en la BD
-      const { error } = await supabase.auth.signUp({ 
+      // 2. VERIFICACIÓN DE INMUEBLE ÚNICO EN ESTE CONJUNTO
+      const { data: inmuebleExiste } = await supabase
+        .from('usuarios')
+        .select('id')
+        .eq('copropiedad_id', copropiedadId)
+        .ilike('inmueble', inmueble.trim())
+        .maybeSingle();
+        
+      if (inmuebleExiste) {
+        setCargando(false);
+        return Swal.fire('Inmueble Ocupado', `El inmueble ${inmueble} ya tiene un usuario registrado.`, 'error');
+      }
+
+      // 3. REGISTRO EN AUTH
+      const { error: authError } = await supabase.auth.signUp({ 
         email, 
         password, 
         options: { 
@@ -236,43 +206,22 @@ export default function Login() {
         } 
       });
       
-      // Lanzamos el error si algo falla en Supabase
-      if (error) {
-        // 🔥 MAGIA AQUÍ MÁS FUERTE: ATRAPAMOS EL ERROR 422 DIRECTAMENTE 🔥
-        const correoExiste = 
-          error.status === 422 || 
-          error.message.toLowerCase().includes("already registered") || 
-          error.message.toLowerCase().includes("already exists");
-
-        if (correoExiste) {
-          setCargando(false);
-          return Swal.fire({
-            title: '¡Ya tienes cuenta!',
-            text: 'Este correo ya pertenece a nuestra red. Por favor, ve a Iniciar Sesión con tu clave actual y el sistema te vinculará automáticamente a este conjunto.',
-            icon: 'info',
-            confirmButtonText: 'Ir a Login',
-            confirmButtonColor: config.color1
-          }).then(() => {
-            setVista('login');
-          });
-        }
-        throw error;
-      }
+      if (authError) throw authError;
 
       Swal.fire('¡Éxito!', 'Usuario creado correctamente. Ya puedes ingresar.', 'success');
       setVista('login'); 
       setPassword(''); 
-      setCodigo('');
       
     } catch (error) {
       let msg = "Error al registrar.";
-      // Le agregamos el signo de interrogación (?.) por si error.message viene vacío y no rompa la app
-      if (error.message?.includes("at least 8")) msg = "La contraseña debe tener mínimo 8 caracteres.";
-      else if (error.message?.includes("unique_inmueble")) msg = "El inmueble ya se encuentra registrado en el sistema.";
-      
+      if (error.status === 422 || error.message?.includes("already registered")) {
+        msg = "Este correo ya está en uso en otra copropiedad.";
+      } else if (error.message?.includes("at least 8")) {
+        msg = "La contraseña debe tener mínimo 8 caracteres.";
+      }
       Swal.fire('Error', msg, 'error');
     } finally { setCargando(false); }
-  };  
+  };
 
   const solicitarRecuperacion = async (e) => {
     e.preventDefault();
@@ -308,7 +257,6 @@ export default function Login() {
     } finally { setCargando(false); }
   };
 
-  // Función para abrir el modal de Habeas Data
   const abrirModalHabeasData = (e) => {
     e.preventDefault(); 
     Swal.fire({
@@ -420,7 +368,6 @@ export default function Login() {
               <div><label className="text-[10px] font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Correo Electrónico</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full input-linea" required /></div>
               <div><label className="text-[10px] font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Contraseña</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea" placeholder="Mínimo 8 caracteres" required minLength={8} /></div>
               
-              {/* TÉRMINOS DE LEY Y HABEAS DATA */}
               <div className="mt-6 space-y-3 bg-black/30 p-4 rounded-xl border border-white/10">
                 <label className="flex items-start gap-3 cursor-pointer group">
                   <div className="relative flex items-center pt-1">
@@ -430,8 +377,6 @@ export default function Login() {
                     Acepto las <button onClick={abrirModalHabeasData} className="texto-neon font-bold hover:underline">Políticas de Privacidad (Ley 1581 de 2012)</button>.
                   </span>
                 </label>
-
-                {/* Este checkbox ahora es OPCIONAL (le quité el required) */}
                 <label className="flex items-start gap-3 cursor-pointer group">
                   <div className="relative flex items-center pt-1">
                     <input type="checkbox" checked={aceptaTratamiento} onChange={(e) => setAceptaTratamiento(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer" />
@@ -449,7 +394,6 @@ export default function Login() {
             </form>
           )}
 
-          {/* VISTA 3: RECUPERAR CLAVE */}
           {vista === 'recuperar' && (
             <form onSubmit={solicitarRecuperacion} className="space-y-6 animate-in fade-in duration-300">
               <p className="text-white/60 text-sm leading-relaxed">Ingresa tu correo registrado. Te enviaremos un enlace universal para restaurar tu acceso.</p>
@@ -461,7 +405,6 @@ export default function Login() {
             </form>
           )}
 
-          {/* VISTA 4: RESTABLECER */}
           {vista === 'restablecer' && (
             <form onSubmit={actualizarClave} className="space-y-6 animate-in fade-in duration-300">
               <p className="text-white/60 text-sm">El enlace ha sido validado. Escribe tu nueva contraseña segura.</p>
@@ -473,7 +416,6 @@ export default function Login() {
           )}
         </div>
 
-        {/* MITAD DERECHA: PANEL VISUAL */}
         <div className="hidden md:flex w-1/2 relative items-center justify-end p-14 text-right overflow-hidden pointer-events-none">
           <div className="absolute inset-0 opacity-90" style={{ background: `linear-gradient(135deg, ${config.color1}, ${config.color2})`, clipPath: 'polygon(30% 0, 100% 0, 100% 100%, 0% 100%)' }}></div>
           <div className="relative z-10 max-w-sm">
