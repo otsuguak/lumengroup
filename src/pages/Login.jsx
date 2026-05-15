@@ -82,7 +82,9 @@ export default function Login() {
    const { data: { session } } = await supabase.auth.getSession();
    
    if (session?.user) {
-      const { data: perfil } = await supabase.from('usuarios').select('rol, copropiedad_id').eq('id', session.user.id).maybeSingle();
+      // 🔥 Ajuste menor: asegurar que busque el rol en el conjunto actual
+      const idActualSession = sessionStorage.getItem('copropiedad_id') || copropiedadId;
+      const { data: perfil } = await supabase.from('usuarios').select('rol, copropiedad_id').eq('id', session.user.id).eq('copropiedad_id', idActualSession).maybeSingle();
       const rolReal = perfil?.rol || session.user.user_metadata?.rol;
       
       if (perfil?.copropiedad_id) {
@@ -99,6 +101,7 @@ export default function Login() {
     }
   };
 
+  // 🔥 LÓGICA DE LOGIN MEJORADA (MANTIENE TU DISEÑO) 🔥
   const iniciarSesion = async (e) => {
     e.preventDefault();
     if (!email || !password) return Swal.fire('Atención', 'Ingresa correo y contraseña', 'warning');
@@ -108,16 +111,72 @@ export default function Login() {
       if (error) throw error;
       
       if (data.user) {
-        const { data: perfil } = await supabase.from('usuarios').select('rol, copropiedad_id').eq('id', data.user.id).maybeSingle();
-        const rolFinal = perfil?.rol || data.user.user_metadata?.rol;
-        sessionStorage.setItem('copropiedad_id', perfil?.copropiedad_id || data.user.user_metadata?.copropiedad_id);
+        // 1. Verificamos si tiene perfil en el conjunto de la URL actual
+        const { data: perfil } = await supabase
+          .from('usuarios')
+          .select('rol, copropiedad_id')
+          .eq('id', data.user.id)
+          .eq('copropiedad_id', copropiedadId)
+          .maybeSingle();
 
-       if (rolFinal === 'agente') {
-        navigate('/admin');
-        } else if (rolFinal === 'vigilante') {
-        navigate('/panel-vigilancia'); 
+        let rolFinal = 'usuario';
+
+        // 2. Si entra, pero no tiene perfil en ESTE conjunto (viene de otro)
+        if (!perfil) {
+          const { value: formValues } = await Swal.fire({
+            title: `¡Bienvenido a ${config.nombreEmpresa}!`,
+            html: `
+              <p style="font-size: 0.9em; margin-bottom: 15px;">Detectamos que ya eres usuario de nuestra red. Confirma tus datos para vincularte a este conjunto:</p>
+              <input id="swal-inmueble" class="swal2-input" placeholder="Torre/Apto (Ej: T1-101)">
+              <input id="swal-celular" class="swal2-input" placeholder="Tu Celular">
+            `,
+            focusConfirm: false,
+            confirmButtonText: 'Vincularme',
+            confirmButtonColor: config.color1,
+            preConfirm: () => {
+              const inm = document.getElementById('swal-inmueble').value;
+              const cel = document.getElementById('swal-celular').value;
+              if (!inm || !cel) return Swal.showValidationMessage('Ambos campos son obligatorios');
+              return { inmueble: inm, celular: cel };
+            }
+          });
+
+          if (formValues) {
+            // Le creamos su registro en la tabla usuarios para este nuevo conjunto
+            const { error: errorInsert } = await supabase.from('usuarios').insert({
+              id: data.user.id,
+              email: data.user.email,
+              nombre: data.user.user_metadata?.nombre || 'Usuario',
+              celular: formValues.celular,
+              inmueble: formValues.inmueble.trim(),
+              inmueble_id: formValues.inmueble.trim(),
+              rol: 'usuario',
+              copropiedad_id: copropiedadId,
+              tipo_residente: 'Propietario'
+            });
+
+            if (errorInsert) throw errorInsert;
+            Swal.fire('¡Éxito!', 'Perfil vinculado. Ingresando...', 'success');
+            rolFinal = 'usuario';
+          } else {
+            // Si cancela el modal, cerramos sesión
+            await supabase.auth.signOut();
+            setCargando(false);
+            return;
+          }
         } else {
-        navigate('/panel-residente');
+          rolFinal = perfil.rol;
+        }
+
+        // 3. Redirección normal
+        sessionStorage.setItem('copropiedad_id', copropiedadId);
+
+        if (rolFinal === 'agente') {
+          navigate('/admin');
+        } else if (rolFinal === 'vigilante') {
+          navigate('/panel-vigilancia'); 
+        } else {
+          navigate('/panel-residente');
         }
       }
     } catch (err) {
@@ -125,6 +184,7 @@ export default function Login() {
     } finally { setCargando(false); }
   };
 
+  // 🔥 LÓGICA DE REGISTRO MEJORADA (MANTIENE TU DISEÑO) 🔥
   const registrarUsuario = async (e) => {
     e.preventDefault();
     if (!email || !password || !nombre || !rol || !inmueble || !celular) return Swal.fire('Campos incompletos', 'Diligencia todos los datos.', 'warning');
@@ -157,8 +217,7 @@ export default function Login() {
         }
       }
 
-      // Guardamos la info de Habeas Data también en la BD
-      // 🔥 AQUÍ ARREGLAMOS EL ERROR DE VERCEL (SOLO QUITAMOS EL ": authError" REPETIDO)
+  // Guardamos la info de Habeas Data también en la BD
       const { error } = await supabase.auth.signUp({ 
         email, 
         password, 
@@ -178,7 +237,27 @@ export default function Login() {
       });
       
       // Lanzamos el error si algo falla en Supabase
-      if (error) throw error;
+      if (error) {
+        // 🔥 MAGIA AQUÍ MÁS FUERTE: ATRAPAMOS EL ERROR 422 DIRECTAMENTE 🔥
+        const correoExiste = 
+          error.status === 422 || 
+          error.message.toLowerCase().includes("already registered") || 
+          error.message.toLowerCase().includes("already exists");
+
+        if (correoExiste) {
+          setCargando(false);
+          return Swal.fire({
+            title: '¡Ya tienes cuenta!',
+            text: 'Este correo ya pertenece a nuestra red. Por favor, ve a Iniciar Sesión con tu clave actual y el sistema te vinculará automáticamente a este conjunto.',
+            icon: 'info',
+            confirmButtonText: 'Ir a Login',
+            confirmButtonColor: config.color1
+          }).then(() => {
+            setVista('login');
+          });
+        }
+        throw error;
+      }
 
       Swal.fire('¡Éxito!', 'Usuario creado correctamente. Ya puedes ingresar.', 'success');
       setVista('login'); 
@@ -187,12 +266,13 @@ export default function Login() {
       
     } catch (error) {
       let msg = "Error al registrar.";
-      if (error.message.includes("at least 8")) msg = "La contraseña debe tener mínimo 8 caracteres.";
-      else if (error.message.includes("already registered")) msg = "Este correo ya está registrado.";
-      else if (error.message.includes("unique_inmueble")) msg = "El inmueble ya se encuentra registrado en el sistema.";
+      // Le agregamos el signo de interrogación (?.) por si error.message viene vacío y no rompa la app
+      if (error.message?.includes("at least 8")) msg = "La contraseña debe tener mínimo 8 caracteres.";
+      else if (error.message?.includes("unique_inmueble")) msg = "El inmueble ya se encuentra registrado en el sistema.";
+      
       Swal.fire('Error', msg, 'error');
     } finally { setCargando(false); }
-  };
+  };  
 
   const solicitarRecuperacion = async (e) => {
     e.preventDefault();
@@ -230,7 +310,7 @@ export default function Login() {
 
   // Función para abrir el modal de Habeas Data
   const abrirModalHabeasData = (e) => {
-    e.preventDefault(); // Evita que la página salte al inicio si el href es "#"
+    e.preventDefault(); 
     Swal.fire({
       title: 'Políticas de Privacidad',
       html: `
