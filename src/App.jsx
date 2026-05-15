@@ -4,10 +4,10 @@ import { supabase } from './supabase'; // Asegúrate de que la ruta sea correcta
 import Swal from 'sweetalert2';
 
 import PortalComunitario from './pages/PortalComunitario';
-import CrmAdmin from './pages/Crmadmin';
+import CrmAdmin from './pages/CrmAdmin';
 import Login from './pages/Login'; 
 import CrmUsuario from './pages/CrmUsuario';
-import CRMVigilante from './pages/CRMVigilante'; 
+import CRMVigilante from './pages/CrmVigilante'; 
 
 // =======================================================
 // 🛡️ COMPONENTE GUARDIÁN DE SEGURIDAD (CIERRE AUTOMÁTICO)
