@@ -5,11 +5,10 @@ import Swal from 'sweetalert2';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [vista, setVista] = useState('login'); // 'login', 'registro', 'recuperar', 'restablecer'
+  const [vista, setVista] = useState('login'); 
   const [cargando, setCargando] = useState(false);
   const [copropiedadId, setCopropiedadId] = useState(null);
 
-  // Campos de los formularios
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nombre, setNombre] = useState('');
@@ -19,11 +18,9 @@ export default function Login() {
   const [inmueble, setInmueble] = useState('');
   const [codigo, setCodigo] = useState('');
   
-  // Checkboxes de Ley
   const [aceptaHabeas, setAceptaHabeas] = useState(false);
   const [aceptaTratamiento, setAceptaTratamiento] = useState(false);
 
-  // Configuración dinámica por defecto (LumenGroup SaaS)
   const [config, setConfig] = useState({
     logo: '', 
     tituloHero: 'LumenGroup', 
@@ -100,7 +97,7 @@ export default function Login() {
     }
   };
 
-  // 🔥 LÓGICA DE LOGIN ESTRICTA (MANTIENE TU DISEÑO) 🔥
+  // 🔥 LÓGICA DE LOGIN: PERMITE AGREGARSE A UN NUEVO CONJUNTO 🔥
   const iniciarSesion = async (e) => {
     e.preventDefault();
     if (!email || !password) return Swal.fire('Atención', 'Ingresa correo y contraseña', 'warning');
@@ -110,7 +107,7 @@ export default function Login() {
       if (error) throw error;
       
       if (data.user) {
-        // Validamos que el usuario pertenezca a ESTA copropiedad
+        // 1. Verificamos si tiene perfil en el conjunto actual
         const { data: perfil } = await supabase
           .from('usuarios')
           .select('rol, copropiedad_id')
@@ -118,21 +115,62 @@ export default function Login() {
           .eq('copropiedad_id', copropiedadId)
           .maybeSingle();
 
+        let rolFinal = 'usuario';
+
+        // 2. Si NO tiene perfil aquí, aplicamos tu regla: lo dejamos crearlo
         if (!perfil) {
-          // Si el usuario existe en el sistema pero NO en esta copropiedad, lo sacamos
-          await supabase.auth.signOut();
-          setCargando(false);
-          return Swal.fire({
-            title: 'Acceso Denegado',
-            text: 'Tu cuenta está registrada en otra copropiedad. Por políticas de seguridad de LumenGroup, no se permite el acceso a múltiples conjuntos con el mismo correo.',
-            icon: 'error',
-            confirmButtonColor: config.color1
+          const { value: formValues } = await Swal.fire({
+            title: `¡Bienvenido a ${config.nombreEmpresa}!`,
+            html: `
+              <p style="font-size: 0.9em; margin-bottom: 15px;">Detectamos que tu correo existe en nuestra red. Para ingresar a este conjunto, indícanos tu inmueble:</p>
+              <input id="swal-inmueble" class="swal2-input" placeholder="Torre/Apto (Ej: T1-101)">
+              <input id="swal-celular" class="swal2-input" placeholder="Tu Celular">
+            `,
+            focusConfirm: false,
+            confirmButtonText: 'Registrar Inmueble',
+            confirmButtonColor: config.color1,
+            preConfirm: async () => {
+              const inm = document.getElementById('swal-inmueble').value;
+              const cel = document.getElementById('swal-celular').value;
+              if (!inm || !cel) return Swal.showValidationMessage('Ambos campos son obligatorios');
+              
+              // Validamos que el inmueble no exista ya en ESTE conjunto
+              const { data: existe } = await supabase.from('usuarios').select('id').eq('copropiedad_id', copropiedadId).ilike('inmueble', inm.trim()).maybeSingle();
+              if (existe) return Swal.showValidationMessage(`El inmueble ${inm} ya está registrado aquí.`);
+              
+              return { inmueble: inm, celular: cel };
+            }
           });
+
+          if (formValues) {
+            // Le creamos su registro para este nuevo conjunto
+            const { error: errorInsert } = await supabase.from('usuarios').insert({
+              id: data.user.id,
+              email: data.user.email,
+              nombre: data.user.user_metadata?.nombre || 'Usuario',
+              celular: formValues.celular,
+              inmueble: formValues.inmueble.trim(),
+              inmueble_id: formValues.inmueble.trim(),
+              rol: 'usuario',
+              copropiedad_id: copropiedadId,
+              tipo_residente: 'Propietario'
+            });
+
+            if (errorInsert) throw errorInsert;
+            Swal.fire('¡Éxito!', 'Inmueble registrado. Ingresando...', 'success');
+            rolFinal = 'usuario';
+          } else {
+            await supabase.auth.signOut();
+            setCargando(false);
+            return;
+          }
+        } else {
+          rolFinal = perfil.rol;
         }
 
         sessionStorage.setItem('copropiedad_id', copropiedadId);
-        if (perfil.rol === 'agente') navigate('/admin');
-        else if (perfil.rol === 'vigilante') navigate('/panel-vigilancia');
+        if (rolFinal === 'agente') navigate('/admin');
+        else if (rolFinal === 'vigilante') navigate('/panel-vigilancia'); 
         else navigate('/panel-residente');
       }
     } catch (err) {
@@ -140,7 +178,7 @@ export default function Login() {
     } finally { setCargando(false); }
   };
 
-  // 🔥 LÓGICA DE REGISTRO BLINDADA CONTRA DUPLICADOS Y ERROR 500 🔥
+  // 🔥 LÓGICA DE REGISTRO: VALIDA INMUEBLES Y REDIRIGE AL LOGIN SI YA EXISTE 🔥
   const registrarUsuario = async (e) => {
     e.preventDefault();
     if (!email || !password || !nombre || !rol || !inmueble || !celular) return Swal.fire('Campos incompletos', 'Diligencia todos los datos.', 'warning');
@@ -153,75 +191,65 @@ export default function Login() {
         setCargando(false); return Swal.fire('Acceso Denegado', 'Código secreto incorrecto.', 'error');
       }
 
-      // 1. VERIFICACIÓN GLOBAL DE CORREO (Para evitar el Error 500 y duplicidad)
-      const { data: globalUser } = await supabase
-        .from('usuarios')
-        .select('copropiedad_id')
-        .eq('email', email.trim().toLowerCase())
-        .maybeSingle();
+      if (rol === 'agente') {
+        const { data: adminExiste } = await supabase.rpc('check_admin_exists', { p_copropiedad_id: copropiedadId });
+        if (adminExiste) { setCargando(false); return Swal.fire('Denegado', 'Ya existe un administrador para este conjunto.', 'warning'); }
+      }
 
-      if (globalUser) {
-        setCargando(false);
-        if (globalUser.copropiedad_id === copropiedadId) {
-          return Swal.fire('Ya registrado', 'Este correo ya tiene una cuenta en esta copropiedad. Ve al login e inicia sesión.', 'info');
-        } else {
-          return Swal.fire({
-            title: 'No se permite duplicidad',
-            text: 'Este correo ya está registrado en otra copropiedad de nuestra red. Por políticas de seguridad, no puedes crear múltiples perfiles.',
-            icon: 'error',
-            confirmButtonColor: config.color1
-          });
+      // 🔥 VALIDACIÓN DE INMUEBLE ÚNICO POR CONJUNTO 🔥
+      if (rol === 'usuario') {
+        const { data: inmuebleExiste } = await supabase
+          .from('usuarios')
+          .select('id')
+          .eq('copropiedad_id', copropiedadId)
+          .ilike('inmueble', inmueble.trim())
+          .maybeSingle();
+          
+        if (inmuebleExiste) {
+          setCargando(false);
+          return Swal.fire('Registro Denegado', `El inmueble ${inmueble} ya tiene un usuario registrado. Solo se permite una cuenta por inmueble.`, 'error');
         }
       }
 
-      // 2. VERIFICACIÓN DE INMUEBLE ÚNICO EN ESTE CONJUNTO
-      const { data: inmuebleExiste } = await supabase
-        .from('usuarios')
-        .select('id')
-        .eq('copropiedad_id', copropiedadId)
-        .ilike('inmueble', inmueble.trim())
-        .maybeSingle();
-        
-      if (inmuebleExiste) {
-        setCargando(false);
-        return Swal.fire('Inmueble Ocupado', `El inmueble ${inmueble} ya tiene un usuario registrado.`, 'error');
-      }
-
-      // 3. REGISTRO EN AUTH
-      const { error: authError } = await supabase.auth.signUp({ 
+      const { error } = await supabase.auth.signUp({ 
         email, 
         password, 
         options: { 
           data: { 
-            nombre, 
-            rol, 
-            inmueble: inmueble.trim(), 
-            inmueble_id: inmueble.trim(), 
-            celular, 
-            tipo_residente: tipoResidente, 
-            copropiedad_id: copropiedadId,
-            acepta_habeas_data: aceptaHabeas,
-            acepta_tratamiento_datos: aceptaTratamiento 
+            nombre, rol, inmueble: inmueble.trim(), inmueble_id: inmueble.trim(), celular, tipo_residente: tipoResidente, copropiedad_id: copropiedadId, acepta_habeas_data: aceptaHabeas, acepta_tratamiento_datos: aceptaTratamiento 
           } 
         } 
       });
       
-      if (authError) throw authError;
+      if (error) {
+        // Si sale 422 o already registered, lo mandamos al Login para que aplique la regla de 1 correo en multiples conjuntos
+        const correoExiste = error.status === 422 || error.message.toLowerCase().includes("already registered") || error.message.toLowerCase().includes("already exists");
+        if (correoExiste) {
+          setCargando(false);
+          return Swal.fire({
+            title: '¡Ya estás en la red!',
+            text: 'Tu correo ya existe en otro conjunto. Por favor, ve a "Iniciar Sesión" con tu contraseña original y el sistema te dejará registrar tu inmueble para este nuevo conjunto.',
+            icon: 'info',
+            confirmButtonText: 'Ir a Login',
+            confirmButtonColor: config.color1
+          }).then(() => { setVista('login'); });
+        }
+        throw error;
+      }
 
       Swal.fire('¡Éxito!', 'Usuario creado correctamente. Ya puedes ingresar.', 'success');
       setVista('login'); 
       setPassword(''); 
+      setCodigo('');
       
     } catch (error) {
-      let msg = "Error al registrar.";
-      if (error.status === 422 || error.message?.includes("already registered")) {
-        msg = "Este correo ya está en uso en otra copropiedad.";
-      } else if (error.message?.includes("at least 8")) {
-        msg = "La contraseña debe tener mínimo 8 caracteres.";
-      }
+      let msg = "Error interno (500) en el servidor. Por favor revisa el Trigger de la base de datos Supabase.";
+      if (error.message?.includes("at least 8")) msg = "La contraseña debe tener mínimo 8 caracteres.";
+      else if (error.message?.includes("unique_inmueble")) msg = "El inmueble ya se encuentra registrado en el sistema.";
+      
       Swal.fire('Error', msg, 'error');
     } finally { setCargando(false); }
-  };
+  }; 
 
   const solicitarRecuperacion = async (e) => {
     e.preventDefault();
