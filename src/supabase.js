@@ -1,7 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Reemplaza estas llaves si alguna vez las rotas en tu panel de Supabase
-const supabaseUrl = 'https://rqjfaztnaktizrgllhna.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxamZhenRuYWt0aXpyZ2xsaG5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMzk1NjksImV4cCI6MjA4NzcxNTU2OX0.cb6LSWq5YZ7BKRdBx2VoeD-m1gUonfpU_MJemaTSB3U';
+// Esto hace que el código use las variables seguras de Vercel o tu .env local
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error("Faltan las llaves de Supabase. Revisa tu archivo .env o las variables en Vercel.");
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey);

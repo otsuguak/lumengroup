@@ -158,7 +158,8 @@ export default function Login() {
       }
 
       // Guardamos la info de Habeas Data también en la BD
-      const { error: authError } = await supabase.auth.signUp({ 
+      // 🔥 AQUÍ ARREGLAMOS EL ERROR DE VERCEL (SOLO QUITAMOS EL ": authError" REPETIDO)
+      const { error } = await supabase.auth.signUp({ 
         email, 
         password, 
         options: { 
@@ -176,7 +177,8 @@ export default function Login() {
         } 
       });
       
-      if (authError) throw authError;
+      // Lanzamos el error si algo falla en Supabase
+      if (error) throw error;
 
       Swal.fire('¡Éxito!', 'Usuario creado correctamente. Ya puedes ingresar.', 'success');
       setVista('login'); 
