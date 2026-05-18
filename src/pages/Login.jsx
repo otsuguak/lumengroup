@@ -35,10 +35,21 @@ export default function Login() {
   });
 
   useEffect(() => {
+    // 🔥 AJUSTE 1: Listener de Supabase para detectar cuando vuelven del correo
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setVista('restablecer');
+      }
+    });
+
     iniciarMotorSaaS();
+
+    // Limpiar suscripción al desmontar
+    return () => subscription.unsubscribe();
   }, []);
 
   const iniciarMotorSaaS = async () => {
+    // Check manual por si el listener tarda
     if (window.location.hash.includes('type=recovery')) {
       setVista('restablecer'); 
       return;
@@ -76,9 +87,8 @@ export default function Login() {
       console.error("Error al detectar entorno SaaS:", error);
     }
 
-   const { data: { session } } = await supabase.auth.getSession();
-   
-   if (session?.user) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
       const idActualSession = sessionStorage.getItem('copropiedad_id') || copropiedadId;
       const { data: perfil } = await supabase.from('usuarios').select('rol, copropiedad_id').eq('id', session.user.id).eq('copropiedad_id', idActualSession).maybeSingle();
       const rolReal = perfil?.rol || session.user.user_metadata?.rol;
@@ -87,17 +97,12 @@ export default function Login() {
         sessionStorage.setItem('copropiedad_id', perfil.copropiedad_id);
       }
 
-      if (rolReal === 'agente') {
-       navigate('/admin'); 
-      } else if (rolReal === 'vigilante') {
-       navigate('/panel-vigilancia'); 
-      } else {
-       navigate('/panel-residente'); 
-      }
+      if (rolReal === 'agente') navigate('/admin'); 
+      else if (rolReal === 'vigilante') navigate('/panel-vigilancia'); 
+      else navigate('/panel-residente'); 
     }
   };
 
-  // 🔥 LÓGICA DE LOGIN: PERMITE AGREGARSE A UN NUEVO CONJUNTO 🔥
   const iniciarSesion = async (e) => {
     e.preventDefault();
     if (!email || !password) return Swal.fire('Atención', 'Ingresa correo y contraseña', 'warning');
@@ -107,7 +112,6 @@ export default function Login() {
       if (error) throw error;
       
       if (data.user) {
-        // 1. Verificamos si tiene perfil en el conjunto actual
         const { data: perfil } = await supabase
           .from('usuarios')
           .select('rol, copropiedad_id')
@@ -117,7 +121,6 @@ export default function Login() {
 
         let rolFinal = 'usuario';
 
-        // 2. Si NO tiene perfil aquí, aplicamos tu regla: lo dejamos crearlo
         if (!perfil) {
           const { value: formValues } = await Swal.fire({
             title: `¡Bienvenido a ${config.nombreEmpresa}!`,
@@ -134,23 +137,25 @@ export default function Login() {
               const cel = document.getElementById('swal-celular').value;
               if (!inm || !cel) return Swal.showValidationMessage('Ambos campos son obligatorios');
               
-              // Validamos que el inmueble no exista ya en ESTE conjunto
-              const { data: existe } = await supabase.from('usuarios').select('id').eq('copropiedad_id', copropiedadId).ilike('inmueble', inm.trim()).maybeSingle();
-              if (existe) return Swal.showValidationMessage(`El inmueble ${inm} ya está registrado aquí.`);
+              const { data: existe } = await supabase.from('usuarios')
+                .select('id')
+                .eq('copropiedad_id', copropiedadId)
+                .ilike('inmueble', inm.trim())
+                .maybeSingle();
+
+              if (existe) return Swal.showValidationMessage(`El inmueble ${inm} ya está registrado aquí por otro usuario.`);
               
               return { inmueble: inm, celular: cel };
             }
           });
 
           if (formValues) {
-            // Le creamos su registro para este nuevo conjunto
             const { error: errorInsert } = await supabase.from('usuarios').insert({
               id: data.user.id,
               email: data.user.email,
               nombre: data.user.user_metadata?.nombre || 'Usuario',
               celular: formValues.celular,
               inmueble: formValues.inmueble.trim(),
-              inmueble_id: formValues.inmueble.trim(),
               rol: 'usuario',
               copropiedad_id: copropiedadId,
               tipo_residente: 'Propietario'
@@ -178,7 +183,6 @@ export default function Login() {
     } finally { setCargando(false); }
   };
 
-  // 🔥 LÓGICA DE REGISTRO: VALIDA INMUEBLES Y REDIRIGE AL LOGIN SI YA EXISTE 🔥
   const registrarUsuario = async (e) => {
     e.preventDefault();
     if (!email || !password || !nombre || !rol || !inmueble || !celular) return Swal.fire('Campos incompletos', 'Diligencia todos los datos.', 'warning');
@@ -196,18 +200,21 @@ export default function Login() {
         if (adminExiste) { setCargando(false); return Swal.fire('Denegado', 'Ya existe un administrador para este conjunto.', 'warning'); }
       }
 
-      // 🔥 VALIDACIÓN DE INMUEBLE ÚNICO POR CONJUNTO 🔥
       if (rol === 'usuario') {
         const { data: inmuebleExiste } = await supabase
           .from('usuarios')
-          .select('id')
+          .select('id, email')
           .eq('copropiedad_id', copropiedadId)
           .ilike('inmueble', inmueble.trim())
           .maybeSingle();
           
         if (inmuebleExiste) {
           setCargando(false);
-          return Swal.fire('Registro Denegado', `El inmueble ${inmueble} ya tiene un usuario registrado. Solo se permite una cuenta por inmueble.`, 'error');
+          return Swal.fire({
+            title: 'Inmueble ya registrado',
+            text: `El inmueble ${inmueble} ya tiene un usuario asignado. Por seguridad, solo se permite una cuenta por inmueble.`,
+            icon: 'error'
+          });
         }
       }
 
@@ -216,19 +223,25 @@ export default function Login() {
         password, 
         options: { 
           data: { 
-            nombre, rol, inmueble: inmueble.trim(), inmueble_id: inmueble.trim(), celular, tipo_residente: tipoResidente, copropiedad_id: copropiedadId, acepta_habeas_data: aceptaHabeas, acepta_tratamiento_datos: aceptaTratamiento 
+            nombre, 
+            rol, 
+            inmueble: inmueble.trim(), 
+            celular, 
+            tipo_residente: tipoResidente, 
+            copropiedad_id: copropiedadId, 
+            acepta_habeas_data: aceptaHabeas, 
+            acepta_tratamiento_datos: aceptaTratamiento 
           } 
         } 
       });
       
       if (error) {
-        // Si sale 422 o already registered, lo mandamos al Login para que aplique la regla de 1 correo en multiples conjuntos
         const correoExiste = error.status === 422 || error.message.toLowerCase().includes("already registered") || error.message.toLowerCase().includes("already exists");
         if (correoExiste) {
           setCargando(false);
           return Swal.fire({
             title: '¡Ya estás en la red!',
-            text: 'Tu correo ya existe en otro conjunto. Por favor, ve a "Iniciar Sesión" con tu contraseña original y el sistema te dejará registrar tu inmueble para este nuevo conjunto.',
+            text: 'Tu correo ya existe en otro conjunto de nuestra red. Por favor, ve a "Iniciar Sesión" con tu contraseña original y el sistema te permitirá vincularte a este nuevo conjunto.',
             icon: 'info',
             confirmButtonText: 'Ir a Login',
             confirmButtonColor: config.color1
@@ -243,26 +256,32 @@ export default function Login() {
       setCodigo('');
       
     } catch (error) {
-      let msg = "Error interno (500) en el servidor. Por favor revisa el Trigger de la base de datos Supabase.";
-      if (error.message?.includes("at least 8")) msg = "La contraseña debe tener mínimo 8 caracteres.";
-      else if (error.message?.includes("unique_inmueble")) msg = "El inmueble ya se encuentra registrado en el sistema.";
-      
-      Swal.fire('Error', msg, 'error');
+      console.error("Error capturado en Registro:", error);
+      let msg = "Error interno en el servidor.";
+      if (error.message?.includes("at least 8")) {
+        msg = "La contraseña debe tener mínimo 8 caracteres.";
+      } else if (error.code === '23505' || error.message?.includes("unique_inmueble") || error.message?.includes("duplicate key")) {
+        msg = `El inmueble ${inmueble} ya está registrado en este conjunto.`;
+      } else if (error.status === 500) {
+        msg = "Hubo un conflicto al guardar los datos. Es posible que el inmueble ya exista.";
+      }
+      Swal.fire('Error de Registro', msg, 'error');
     } finally { setCargando(false); }
   }; 
 
+  // 🔥 AJUSTE 2: Función de recuperación mejorada
   const solicitarRecuperacion = async (e) => {
     e.preventDefault();
-    if(!email) return Swal.fire('Atención', 'Por favor ingresa el correo a recuperar.', 'warning');
+    if(!email) return Swal.fire('Atención', 'Por favor ingresa tu correo electrónico.', 'warning');
     setCargando(true);
     try {
+      // Importante: El redirectTo debe coincidir con lo que pongas en Supabase
       const { error } = await supabase.auth.resetPasswordForEmail(email, { 
         redirectTo: `${window.location.origin}/login` 
       });
       if (error) throw error;
-      Swal.fire('Enviado', 'Si el correo existe, recibirás un enlace de recuperación.', 'success');
+      Swal.fire('¡Correo Enviado!', 'Revisa tu bandeja de entrada (y la carpeta de Spam) para restablecer tu clave.', 'success');
       setVista('login');
-      setEmail('');
     } catch (error) {
       Swal.fire('Error', error.message, 'error');
     } finally { setCargando(false); }
@@ -270,12 +289,15 @@ export default function Login() {
 
   const actualizarClave = async (e) => {
     e.preventDefault();
-    if(!password) return;
+    if(!password || password.length < 8) return Swal.fire('Contraseña débil', 'Debe tener al menos 8 caracteres.', 'warning');
     setCargando(true);
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      Swal.fire('¡Actualizada!', 'Tu contraseña ha sido guardada. Por favor, inicia sesión.', 'success');
+      
+      Swal.fire('¡Éxito!', 'Tu nueva contraseña ha sido guardada.', 'success');
+      
+      // Limpiamos la URL y cerramos sesión para que entre limpio
       window.history.replaceState(null, null, window.location.pathname);
       await supabase.auth.signOut();
       setVista('login'); 
@@ -291,18 +313,11 @@ export default function Login() {
       title: 'Políticas de Privacidad',
       html: `
         <div style="text-align: left; font-size: 0.9em; max-height: 300px; overflow-y: auto; padding-right: 10px;">
-          <p><strong>1. Uso de Datos:</strong> Al registrarte, autorizas a <strong>${config.nombreEmpresa}</strong> y a la administración del conjunto para recolectar, almacenar y utilizar tus datos personales (nombre, celular, correo e inmueble).</p>
+          <p><strong>1. Uso de Datos:</strong> Al registrarte, autorizas a <strong>${config.nombreEmpresa}</strong> y a la administración del conjunto para recolectar, almacenar y utilizar tus datos personales.</p>
           <br/>
-          <p><strong>2. Finalidad:</strong> Tus datos serán usados exclusivamente para:</p>
-          <ul>
-            <li>- Envío de comunicaciones oficiales.</li>
-            <li>- Gestión de acceso, correspondencia y paquetería.</li>
-            <li>- Control de zonas comunes y PQR.</li>
-          </ul>
+          <p><strong>2. Finalidad:</strong> Comunicaciones oficiales, gestión de acceso y paquetería.</p>
           <br/>
-          <p><strong>3. Protección:</strong> En cumplimiento de la Ley 1581 de 2012 (Habeas Data), garantizamos que tu información no será compartida con terceros con fines comerciales ni de marketing.</p>
-          <br/>
-          <p><strong>4. Derechos:</strong> Tienes derecho a conocer, actualizar y rectificar tus datos personales en cualquier momento desde tu perfil, o solicitando su eliminación a la administración.</p>
+          <p><strong>3. Protección:</strong> En cumplimiento de la Ley 1581 de 2012 (Habeas Data).</p>
         </div>
       `,
       icon: 'info',
@@ -333,7 +348,7 @@ export default function Login() {
       {/* CONTENEDOR PRINCIPAL */}
       <div className="relative z-10 flex flex-col md:flex-row w-full max-w-5xl rounded-2xl overflow-hidden neon-box bg-black/40 backdrop-blur-2xl min-h-[550px] shadow-2xl">
         
-        {/* MITAD IZQUIERDA: ÁREA DINÁMICA DE FORMS */}
+        {/* MITAD IZQUIERDA */}
         <div className="w-full md:w-1/2 p-8 md:p-14 flex flex-col justify-center relative z-20 max-h-[90vh] overflow-y-auto esconder-scroll">
           
           <div className="mb-6 flex justify-center md:justify-start items-center h-12">
@@ -398,62 +413,57 @@ export default function Login() {
               
               <div className="mt-6 space-y-3 bg-black/30 p-4 rounded-xl border border-white/10">
                 <label className="flex items-start gap-3 cursor-pointer group">
-                  <div className="relative flex items-center pt-1">
-                    <input type="checkbox" checked={aceptaHabeas} onChange={(e) => setAceptaHabeas(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer" required />
-                  </div>
-                  <span className="text-[10px] text-white/70 leading-relaxed group-hover:text-white transition-colors">
-                    Acepto las <button onClick={abrirModalHabeasData} className="texto-neon font-bold hover:underline">Políticas de Privacidad (Ley 1581 de 2012)</button>.
-                  </span>
-                </label>
-                <label className="flex items-start gap-3 cursor-pointer group">
-                  <div className="relative flex items-center pt-1">
-                    <input type="checkbox" checked={aceptaTratamiento} onChange={(e) => setAceptaTratamiento(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer" />
-                  </div>
-                  <span className="text-[10px] text-white/70 leading-relaxed group-hover:text-white transition-colors">
-                    (Opcional) Autorizo expresamente el uso de mis datos exclusivamente para comunicaciones oficiales, asambleas y gestión interna de la copropiedad.
-                  </span>
+                  <input type="checkbox" checked={aceptaHabeas} onChange={(e) => setAceptaHabeas(e.target.checked)} className="mt-1" required />
+                  <span className="text-[10px] text-white/70">Acepto las <button onClick={abrirModalHabeasData} className="texto-neon font-bold hover:underline">Políticas de Privacidad</button>.</span>
                 </label>
               </div>
               
-              <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-4 transition-transform hover:scale-[1.02] disabled:opacity-50">
-                {cargando ? 'Procesando...' : 'Crear Cuenta'}
-              </button>
+              <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-4 transition-transform hover:scale-[1.02] disabled:opacity-50">Crear Cuenta</button>
               <div className="text-center mt-4 pb-2"><button type="button" onClick={() => setVista('login')} className="texto-neon font-bold hover:underline text-sm">Volver al Login</button></div>
             </form>
           )}
 
+          {/* 🔥 VISTA 3: RECUPERAR CLAVE (Agregada) */}
           {vista === 'recuperar' && (
             <form onSubmit={solicitarRecuperacion} className="space-y-6 animate-in fade-in duration-300">
-              <p className="text-white/60 text-sm leading-relaxed">Ingresa tu correo registrado. Te enviaremos un enlace universal para restaurar tu acceso.</p>
-              <div><label className="text-xs font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Correo Registrado</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full input-linea" placeholder="tu@correo.com" required /></div>
-              <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-4 transition-transform hover:scale-[1.02] disabled:opacity-50">
-                {cargando ? 'Enviando enlace...' : 'Enviar Recuperación'}
+              <p className="text-white/70 text-sm">Ingresa tu correo. Te enviaremos un link para restaurar tu contraseña.</p>
+              <div>
+                <label className="text-xs font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Correo Registrado</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full input-linea" placeholder="tu@correo.com" required />
+              </div>
+              <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-4">
+                {cargando ? 'Enviando...' : 'Enviar Enlace'}
               </button>
-              <div className="text-center mt-4"><button type="button" onClick={() => setVista('login')} className="text-white/40 font-bold hover:text-white text-sm transition-colors">Volver al Login</button></div>
+              <button type="button" onClick={() => setVista('login')} className="w-full text-white/40 text-sm hover:text-white">Cancelar</button>
             </form>
           )}
 
+          {/* 🔥 VISTA 4: RESTABLECER (Nueva Clave) */}
           {vista === 'restablecer' && (
             <form onSubmit={actualizarClave} className="space-y-6 animate-in fade-in duration-300">
-              <p className="text-white/60 text-sm">El enlace ha sido validado. Escribe tu nueva contraseña segura.</p>
-              <div><label className="text-xs font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Nueva Contraseña</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea" placeholder="Mínimo 8 caracteres" required minLength={8} /></div>
-              <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-4 transition-transform hover:scale-[1.02] disabled:opacity-50">
-                {cargando ? 'Guardando...' : 'Guardar y Entrar'}
+              <p className="text-white/70 text-sm">Ingresa tu nueva contraseña para acceder.</p>
+              <div>
+                <label className="text-xs font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Nueva Contraseña</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea" placeholder="Mínimo 8 caracteres" required minLength={8} />
+              </div>
+              <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-4">
+                {cargando ? 'Guardando...' : 'Cambiar Contraseña'}
               </button>
             </form>
           )}
+
         </div>
 
+        {/* MITAD DERECHA: DISEÑO HERO */}
         <div className="hidden md:flex w-1/2 relative items-center justify-end p-14 text-right overflow-hidden pointer-events-none">
-          <div className="absolute inset-0 opacity-90" style={{ background: `linear-gradient(135deg, ${config.color1}, ${config.color2})`, clipPath: 'polygon(30% 0, 100% 0, 100% 100%, 0% 100%)' }}></div>
-          <div className="relative z-10 max-w-sm">
-            <h2 className="text-5xl font-bold text-white mb-4 tracking-wider leading-tight">
-              {config.tituloHero.split(' ')[0]}<br/>{config.tituloHero.split(' ').slice(1).join(' ')}
-            </h2>
-            <p className="text-white/90 text-sm leading-relaxed ml-auto max-w-[250px] font-medium">{config.descHero}</p>
-          </div>
-        </div>
-
+           <div className="absolute inset-0 opacity-90" style={{ background: `linear-gradient(135deg, ${config.color1}, ${config.color2})`, clipPath: 'polygon(30% 0, 100% 0, 100% 100%, 0% 100%)' }}></div>
+           <div className="relative z-10 max-w-sm">
+             <h2 className="text-5xl font-bold text-white mb-4 tracking-wider leading-tight">
+               {config.tituloHero.split(' ')[0]}<br/>{config.tituloHero.split(' ').slice(1).join(' ')}
+             </h2>
+             <p className="text-white/90 text-sm leading-relaxed ml-auto max-w-[250px] font-medium">{config.descHero}</p>
+           </div>
+         </div>
       </div>
     </div>
   );
