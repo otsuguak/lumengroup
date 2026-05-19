@@ -22,6 +22,7 @@ import CanalesPagoAdmin from '../components/CanalesPagoAdmin';
 import ZonasComunesAdmin from '../components/ZonasComunesAdmin';
 import PreguntasFrecuentesAdmin from '../components/PreguntasFrecuentesAdmin';
 import AdminParqueadero from '../components/AdminParqueadero';
+import AsignacionParqueaderos from '../components/AsignacionParqueaderos'; // <-- NUESTRO NUEVO COMPONENTE
 
 
 export default function CrmAdmin() {
@@ -79,7 +80,7 @@ export default function CrmAdmin() {
       if (error && error.code !== 'PGRST116') throw error; // Ignoramos si no encuentra filas
 
       if (data) {
-        // === AQUÍ SE CONECTAN TUS 13 INTERRUPTORES MAESTROS A LA BASE DE DATOS ===
+        // === AQUÍ SE CONECTAN TUS INTERRUPTORES MAESTROS A LA BASE DE DATOS ===
         setPermisos({
           dashboard: true, // El dashboard siempre debe estar visible
           formularios: data.mod_formularios,       // 1. Encuestas
@@ -95,11 +96,14 @@ export default function CrmAdmin() {
           zonas: data.mod_zonas,                  // 11. Zonas Comunes  
           fqr: data.mod_fqr,                      // 12. Centro de Ayuda (FAQ Rediseñado)
           exportar: data.mod_exportar,           // 13. Exportar datos (futuro módulo de análisis avanzado)  
-          escalar: data.mod_escalar             // 14. Escalar a soporte humano (futuro botón de emergencia para casos críticos)
+          escalar: data.mod_escalar,             // 14. Escalar a soporte humano (futuro botón de emergencia para casos críticos)
+          
+          // 🔥 NUEVO INTERRUPTOR SAAS PARA PARQUEADEROS 🔥
+          parqueadero: data.mod_parqueadero       
         });
       } else {
         // Si el conjunto aún no está configurado en clientes_saas, damos acceso básico preventivo
-        setPermisos({ dashboard: true, noticias: true, formularios: true });
+        setPermisos({ dashboard: true, noticias: true, formularios: true, parqueadero: false });
       }
     } catch (error) {
       console.error("Error crítico en la carga de permisos Core:", error);
@@ -277,6 +281,34 @@ export default function CrmAdmin() {
             <span className="font-bold text-sm tracking-tight">Centro de Ayuda (FAQ)</span>
           </button>
           )}
+
+          {/* ==========================================
+              SECCIÓN: PARQUEADEROS Y SEGURIDAD (Protegido por SaaS)
+              ========================================== */}
+          {permisos.parqueadero && (
+            <div className="pt-4 mt-4 border-t border-slate-800/50">
+              <p className="px-4 text-[10px] font-black text-slate-600 uppercase tracking-widest mb-4">Módulo de Seguridad</p>
+
+              {/* Botón 1: Asignación de Parqueaderos */}
+              <button 
+                onClick={() => cambiarMenu('asignacionParqueaderos')} 
+                className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-300 mb-2 ${menuActivo === 'asignacionParqueaderos' ? 'bg-[#f59e0b] text-white shadow-xl shadow-amber-500/20' : 'text-slate-400 hover:bg-slate-800/50'}`}
+              >
+                <span className="text-xl w-6 text-center">🚗</span>
+                <span className="font-bold text-sm tracking-tight">Asignar Parqueadero</span>
+              </button>
+
+              {/* Botón 2: Control Operativo (Vigilancia / Arqueo) */}
+              <button 
+                onClick={() => cambiarMenu('control')} 
+                className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-300 ${menuActivo === 'control' ? 'bg-[#f59e0b] text-white shadow-xl shadow-amber-500/20' : 'text-slate-400 hover:bg-slate-800/50'}`}
+              >
+                <span className="text-xl w-6 text-center">🛡️</span>
+                <span className="font-bold text-sm tracking-tight">Control Operativo</span>
+              </button>
+            </div>
+          )}
+
           {/* ==========================================
               SECCIÓN: DOCUMENTOS Y COMUNICACIÓN
               ========================================== */}
@@ -303,16 +335,6 @@ export default function CrmAdmin() {
               </button>
             )}
           </div>
-          
-            {/* Pegas el botón que copiaste y solo le cambias lo que está en mayúsculas: */}
-          <button 
-            onClick={() => cambiarMenu('control')} /* <-- 1. CAMBIAS ESTO A 'control' */
-            className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-300 ${menuActivo === 'control' /* <-- 2. CAMBIAS ESTO A 'control' */ ? 'bg-[#6366f1] text-white shadow-xl shadow-indigo-500/20' : 'text-slate-400 hover:bg-slate-800/50'}`}
-            >
-            {/* A veces es bueno ponerle un ancho fijo al ícono para que no empuje el texto */}
-            <span className="text-xl w-6 text-center">🛡️</span> {/* <-- 3. CAMBIAS EL ÍCONO */}
-            <span className="font-bold text-sm tracking-tight">Control Operativo</span> {/* <-- 4. CAMBIAS EL TEXTO */}
-          </button>
 
           {/* Separador de configuración */}
           <div className="pt-6 mt-6 border-t border-slate-800/50">
@@ -341,8 +363,6 @@ export default function CrmAdmin() {
                <span className="font-bold text-sm tracking-tight">Tiempos PQR</span>
               </button>  
             )}
-
-         
 
             {/* BOTÓN CERRAR SESIÓN INTEGRADO */}
             <div className="mt-8 pt-8 border-t border-slate-800">
@@ -391,7 +411,7 @@ export default function CrmAdmin() {
         {/* Renderizado Dinámico de Vistas */}
         <div className="flex-1 overflow-y-auto p-4 md:p-10 bg-slate-200 animate-in fade-in duration-500 shadow-inner">
           
-          {/* LÓGICA DE RUTAS INTERNAS (CORREGIDA Y BLINDADA) */}
+          {/* LÓGICA DE RUTAS INTERNAS */}
           {menuActivo === 'dashboard' && <DashboardAdmin permisos={permisos} />}
           
           {permisos.formularios && menuActivo === 'formularios' && <FormulariosAdmin />}
@@ -411,13 +431,13 @@ export default function CrmAdmin() {
           
           {/* Módulos Core siempre activos si son seleccionados */}
           {menuActivo === 'disenoLogin' && <DisenoLoginAdmin />}
-          {menuActivo === 'control' && <AdminParqueadero copropiedadId={sessionStorage.getItem('copropiedad_id')} />}
-          
+
+          {/* 🔥 LÓGICA DE RENDERIZADO DEL NUEVO MÓDULO DE PARQUEADEROS 🔥 */}
+          {permisos.parqueadero && menuActivo === 'asignacionParqueaderos' && <AsignacionParqueaderos copropiedadId={sessionStorage.getItem('copropiedad_id')} />}
+          {permisos.parqueadero && menuActivo === 'control' && <AdminParqueadero copropiedadId={sessionStorage.getItem('copropiedad_id')} />}
 
         </div>
       </main>
     </div>
   );
 }
-
-                    

@@ -7,6 +7,7 @@ import PqrsResidente from '../components/PqrsResidente';
 import DashboardResidente from '../components/DashboardResidente';
 import PorteriaResidente from '../components/PorteriaResidente'; 
 import LlamadosResidente from '../components/LlamadosResidente';
+import PqrsStaff from '../components/PqrsStaff';
 
 export default function CrmUsuario() {
   const navigate = useNavigate(); 
@@ -14,9 +15,12 @@ export default function CrmUsuario() {
   const [sidebarAbierta, setSidebarAbierta] = useState(false);
   
   const [usuario, setUsuario] = useState(null);
-  const [datosDb, setDatosDb] = useState(null); // NUEVO: Para guardar el inmueble real
+  const [datosDb, setDatosDb] = useState(null); 
   const [permisos, setPermisos] = useState(null);
   const [cargando, setCargando] = useState(true);
+
+  // 🔥 ESTADO DE SEGURIDAD PARA SABER SI ES STAFF
+  const [isStaff, setIsStaff] = useState(false);
 
   useEffect(() => {
     validarSesionYPermisos();
@@ -43,15 +47,34 @@ export default function CrmUsuario() {
       
       sessionStorage.setItem('copropiedad_id', idCopropiedad);
 
-      // 👇 NUEVO: Vamos a la BD por los datos exactos del usuario (incluyendo el inmueble)
+      // Traer datos del usuario (inmueble y nombre)
       const { data: userData } = await supabase
         .from('usuarios')
-        .select('inmueble, nombre_completo')
+        .select('inmueble, nombre') 
         .eq('id', session.user.id)
         .single();
       
-      setDatosDb(userData); // Lo guardamos para usarlo en el header
+      setDatosDb(userData);
 
+      // 🔥 MAGIA: VERIFICAR SI ES STAFF CON COMPARACIÓN BLINDADA 🔥
+      const { data: configData } = await supabase
+        .from('configuracion')
+        .select('codigo_staff')
+        .eq('copropiedad_id', idCopropiedad)
+        .maybeSingle();
+
+      const inmuebleUsuario = String(userData?.inmueble || '').trim().toLowerCase();
+      const codigoMaestro = String(configData?.codigo_staff || '').trim().toLowerCase();
+      const esColaborador = (codigoMaestro !== '' && inmuebleUsuario === codigoMaestro);
+      
+      setIsStaff(esColaborador);
+
+      // Si es Staff, forzamos que arranque en 'pqrs'
+      if (esColaborador) {
+        setMenuActivo('pqrs');
+      }
+
+      // Traer permisos del conjunto
       const { data: clienteSaaS } = await supabase
         .from('clientes_saas')
         .select('*')
@@ -113,9 +136,11 @@ export default function CrmUsuario() {
         <div className="p-8 flex justify-between items-center bg-white">
           <div>
             <h2 className="text-2xl font-black tracking-tighter text-slate-800 uppercase">
-              Mi <span className="text-indigo-600 font-light italic">Portal</span>
+              {isStaff ? 'Portal' : 'Mi'} <span className="text-indigo-600 font-light italic">{isStaff ? 'Staff' : 'Portal'}</span>
             </h2>
-            <p className="text-[9px] text-slate-400 mt-2 font-bold tracking-[0.2em] uppercase">Panel Residente</p>
+            <p className="text-[9px] text-slate-400 mt-2 font-bold tracking-[0.2em] uppercase">
+              {isStaff ? 'Panel de Colaborador' : 'Panel Residente'}
+            </p>
           </div>
           <button 
             className="md:hidden text-slate-400 hover:text-red-500 text-3xl" 
@@ -128,33 +153,42 @@ export default function CrmUsuario() {
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto no-scrollbar">
           <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Navegación</p>
           
-          <button onClick={() => cambiarMenu('inicio')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'inicio' ? 'bg-indigo-50 text-indigo-700 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
-            <span className="text-xl">🏠</span>
-            <span className="text-sm tracking-tight">Inicio</span>
-          </button>
-
-          <button onClick={() => cambiarMenu('pqrs')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'pqrs' ? 'bg-indigo-50 text-indigo-700 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
-            <span className="text-xl">📋</span>
-            <span className="text-sm tracking-tight">Mis Solicitudes</span>
-          </button>
-
-          <button onClick={() => cambiarMenu('porteria')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'porteria' ? 'bg-indigo-50 text-indigo-700 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
-            <span className="text-xl">🛎️</span>
-            <span className="text-sm tracking-tight">Portería y Visitas</span>
-          </button>
-
-          {permisos.llamados && (
-            <button onClick={() => cambiarMenu('llamados')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'llamados' ? 'bg-red-50 text-red-600 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
-              <span className="text-xl">🚨</span>
-              <span className="text-sm tracking-tight">Convivencia</span>
+          {/* 🔥 ESCONDEMOS EL INICIO SI ES STAFF 🔥 */}
+          {!isStaff && (
+            <button onClick={() => cambiarMenu('inicio')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'inicio' ? 'bg-indigo-50 text-indigo-700 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
+              <span className="text-xl">🏠</span>
+              <span className="text-sm tracking-tight">Inicio</span>
             </button>
           )}
-                    
-          {permisos.reservas && (
-            <button onClick={() => cambiarMenu('reservas')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'reservas' ? 'bg-indigo-50 text-indigo-700 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
-              <span className="text-xl">📅</span>
-              <span className="text-sm tracking-tight">Mis Reservas</span>
-            </button>
+
+          {/* PQRS (Bandeja de Casos para el Staff) */}
+          <button onClick={() => cambiarMenu('pqrs')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'pqrs' ? 'bg-indigo-50 text-indigo-700 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
+            <span className="text-xl">📋</span>
+            <span className="text-sm tracking-tight">{isStaff ? 'Bandeja de Casos' : 'Mis Solicitudes'}</span>
+          </button>
+
+          {/* 🔥 SECCIÓN EXCLUSIVA RESIDENTES (OCULTA PARA STAFF) 🔥 */}
+          {!isStaff && (
+            <>
+              <button onClick={() => cambiarMenu('porteria')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'porteria' ? 'bg-indigo-50 text-indigo-700 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
+                <span className="text-xl">🛎️</span>
+                <span className="text-sm tracking-tight">Portería y Visitas</span>
+              </button>
+
+              {permisos.llamados && (
+                <button onClick={() => cambiarMenu('llamados')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'llamados' ? 'bg-red-50 text-red-600 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
+                  <span className="text-xl">🚨</span>
+                  <span className="text-sm tracking-tight">Convivencia</span>
+                </button>
+              )}
+                        
+              {permisos.reservas && (
+                <button onClick={() => cambiarMenu('reservas')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 ${menuActivo === 'reservas' ? 'bg-indigo-50 text-indigo-700 font-black' : 'text-slate-500 font-bold hover:bg-slate-50'}`}>
+                  <span className="text-xl">📅</span>
+                  <span className="text-sm tracking-tight">Mis Reservas</span>
+                </button>
+              )}
+            </>
           )}
 
           <div className="mt-8 pt-8 border-t border-slate-100">
@@ -186,34 +220,42 @@ export default function CrmUsuario() {
                   {menuActivo === 'inicio' && 'Resumen General'}
                   {menuActivo === 'porteria' && 'Bitácora de Portería'}
                   {menuActivo === 'reservas' && 'Agendamiento de Zonas'}
-                  {menuActivo === 'pqrs' && 'Atención al Residente'}
+                  {menuActivo === 'pqrs' && (isStaff ? 'Bandeja Operativa' : 'Atención al Residente')}
                   {menuActivo === 'llamados' && 'Novedades de Convivencia'}
                 </h1>
             </div>
           </div>
           
           <div className="flex items-center gap-3 bg-white p-1.5 pr-5 rounded-full border border-slate-200 shadow-sm">
-            <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black shadow-inner">
-              {datosDb?.nombre_completo ? datosDb.nombre_completo.charAt(0) : '👤'}
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-black shadow-inner ${isStaff ? 'bg-slate-800' : 'bg-indigo-600'}`}>
+              {datosDb?.nombre ? datosDb.nombre.charAt(0) : '👤'}
             </div>
             <div className="hidden md:block text-right">
-              {/* 👇 AQUÍ YA IMPRIME EL INMUEBLE REAL 👇 */}
-              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest leading-none mb-1">
-                Apto {datosDb?.inmueble || 'N/A'}
+              <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${isStaff ? 'text-slate-800' : 'text-indigo-600'}`}>
+                {isStaff ? 'STAFF / ASESOR' : `Apto ${datosDb?.inmueble || 'N/A'}`}
               </p>
               <p className="text-xs font-bold text-slate-600 truncate max-w-[120px] leading-none">
-                {datosDb?.nombre_completo || usuario?.email?.split('@')[0]}
+                {datosDb?.nombre || usuario?.email?.split('@')[0]}
               </p>
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 animate-in fade-in duration-500">
-          {menuActivo === 'inicio' && <DashboardResidente />}
-          {menuActivo === 'pqrs' && <PqrsResidente />}
-          {menuActivo === 'porteria' && <PorteriaResidente />}
-          {menuActivo === 'reservas' && <ReservasResidente />}
-          {menuActivo === 'llamados' && <LlamadosResidente />}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 animate-in fade-in duration-500 bg-slate-50">
+          {/* Si es Staff y está en Inicio, no renderizamos Dashboard */}
+          {menuActivo === 'inicio' && !isStaff && <DashboardResidente />}
+          
+          {/* Aquí inyectamos el componente correcto de PQRS */}
+          {menuActivo === 'pqrs' && (isStaff ? <PqrsStaff /> : <PqrsResidente />)}
+          
+          {/* Protección extra para el Staff */}
+          {!isStaff && (
+            <>
+              {menuActivo === 'porteria' && <PorteriaResidente />}
+              {menuActivo === 'reservas' && <ReservasResidente />}
+              {menuActivo === 'llamados' && <LlamadosResidente />}
+            </>
+          )}
         </div>
       </main>
     </div>

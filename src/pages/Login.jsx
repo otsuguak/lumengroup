@@ -310,19 +310,41 @@ export default function Login() {
   const abrirModalHabeasData = (e) => {
     e.preventDefault(); 
     Swal.fire({
-      title: 'Políticas de Privacidad',
+      title: 'Políticas de Privacidad y Habeas Data',
+      width: '600px',
       html: `
-        <div style="text-align: left; font-size: 0.9em; max-height: 300px; overflow-y: auto; padding-right: 10px;">
-          <p><strong>1. Uso de Datos:</strong> Al registrarte, autorizas a <strong>${config.nombreEmpresa}</strong> y a la administración del conjunto para recolectar, almacenar y utilizar tus datos personales.</p>
-          <br/>
-          <p><strong>2. Finalidad:</strong> Comunicaciones oficiales, gestión de acceso y paquetería.</p>
-          <br/>
-          <p><strong>3. Protección:</strong> En cumplimiento de la Ley 1581 de 2012 (Habeas Data).</p>
+        <div style="text-align: justify; font-size: 0.85em; max-height: 400px; overflow-y: auto; padding-right: 15px; color: #475569; line-height: 1.6;">
+          <p style="margin-bottom: 10px;"><strong>MARCO LEGAL:</strong> En estricto cumplimiento de la <strong>Ley 1581 de 2012</strong> y el <strong>Decreto 1377 de 2013</strong> de la República de Colombia, que regulan la Protección de Datos Personales, te informamos sobre el tratamiento de tu información dentro de la plataforma <strong>${config.nombreEmpresa}</strong>.</p>
+          
+          <h4 style="color: #1e293b; margin-top: 15px; margin-bottom: 5px; font-weight: bold;">Artículo 1. Datos Recolectados</h4>
+          <p style="margin-bottom: 10px;">Al registrarte en este portal, autorizas de manera previa, expresa e informada a la Administración del Conjunto y a LumenGroup (como proveedor tecnológico) la recolección, almacenamiento y uso de los siguientes datos: Nombre completo, correo electrónico, número de celular, tipo de tenencia e identificación del inmueble.</p>
+
+          <h4 style="color: #1e293b; margin-top: 15px; margin-bottom: 5px; font-weight: bold;">Artículo 2. Finalidad del Tratamiento</h4>
+          <p style="margin-bottom: 10px;">Tus datos serán utilizados única y exclusivamente para fines operativos y de seguridad propios de la Propiedad Horizontal, los cuales incluyen, pero no se limitan a:</p>
+          <ul style="margin-left: 20px; margin-bottom: 10px; list-style-type: disc;">
+            <li>Envío de comunicaciones oficiales, citaciones a asambleas y cobros de administración.</li>
+            <li>Gestión y trazabilidad de Peticiones, Quejas, Reclamos y Sugerencias (PQRS).</li>
+            <li>Control de acceso, gestión de parqueaderos y recepción de correspondencia/paquetería.</li>
+            <li>Administración y reserva de zonas comunes.</li>
+          </ul>
+
+          <h4 style="color: #1e293b; margin-top: 15px; margin-bottom: 5px; font-weight: bold;">Artículo 3. Protección y Confidencialidad</h4>
+          <p style="margin-bottom: 10px;">Garantizamos que tu información <strong>NO será vendida, cedida ni compartida</strong> con terceros para fines comerciales, publicitarios o de marketing. Los datos están protegidos en servidores seguros bajo altos estándares de encriptación.</p>
+
+          <h4 style="color: #1e293b; margin-top: 15px; margin-bottom: 5px; font-weight: bold;">Artículo 4. Derechos del Titular</h4>
+          <p style="margin-bottom: 10px;">Como titular de los datos, tienes derecho constitucional a <strong>Conocer, Actualizar, Rectificar y Suprimir</strong> tu información personal en cualquier momento. Podrás ejercer estos derechos modificando tu perfil dentro de la aplicación o enviando una solicitud formal a la Administración de tu copropiedad.</p>
+          
+          <div style="margin-top: 20px; padding: 10px; background-color: #f1f5f9; border-left: 4px solid #3b82f6; border-radius: 4px;">
+            <p style="font-size: 0.9em; margin: 0;"><em>Al marcar la casilla de aceptación en el formulario de registro, declaras haber leído y comprendido estas políticas, otorgando tu consentimiento legal para el tratamiento de tus datos en los términos aquí expuestos.</em></p>
+          </div>
         </div>
       `,
       icon: 'info',
-      confirmButtonText: 'Entendido',
-      confirmButtonColor: config.color1
+      confirmButtonText: 'He leído y entendido',
+      confirmButtonColor: config.color1,
+      customClass: {
+        confirmButton: 'font-bold rounded-lg px-6 py-2'
+      }
     });
   };
 
@@ -413,8 +435,32 @@ export default function Login() {
               
               <div className="mt-6 space-y-3 bg-black/30 p-4 rounded-xl border border-white/10">
                 <label className="flex items-start gap-3 cursor-pointer group">
-                  <input type="checkbox" checked={aceptaHabeas} onChange={(e) => setAceptaHabeas(e.target.checked)} className="mt-1" required />
-                  <span className="text-[10px] text-white/70">Acepto las <button onClick={abrirModalHabeasData} className="texto-neon font-bold hover:underline">Políticas de Privacidad</button>.</span>
+                  <div className="relative flex items-center pt-1">
+                    <input 
+                      type="checkbox" 
+                      checked={aceptaHabeas} 
+                      onChange={(e) => setAceptaHabeas(e.target.checked)} 
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer" 
+                      required 
+                    />
+                  </div>
+                  <span className="text-[10px] text-white/70 leading-relaxed group-hover:text-white transition-colors">
+                    Acepto las <button type="button" onClick={abrirModalHabeasData} className="texto-neon font-bold hover:underline">Políticas de Privacidad (Ley 1581 de 2012)</button>.
+                  </span>
+                </label>
+                
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <div className="relative flex items-center pt-1">
+                    <input 
+                      type="checkbox" 
+                      checked={aceptaTratamiento} 
+                      onChange={(e) => setAceptaTratamiento(e.target.checked)} 
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer" 
+                    />
+                  </div>
+                  <span className="text-[10px] text-white/70 leading-relaxed group-hover:text-white transition-colors">
+                    (Opcional) Autorizo expresamente el uso de mis datos exclusivamente para comunicaciones oficiales, y gestión interna de la copropiedad.
+                  </span>
                 </label>
               </div>
               

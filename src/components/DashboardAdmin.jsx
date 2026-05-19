@@ -12,16 +12,45 @@ const formatearCodigo = (codigo) => {
   return `TKT-${String(codigo).padStart(5, '0')}`;
 };
 
+// 🔥 NUEVA FUNCIÓN MEJORADA: Toma la fecha de vencimiento real de la BD 🔥
+const calcularSLA = (fechaVencimiento, estado) => {
+  if (estado === 'Cerrado' || estado === 'Resuelto') {
+    return { texto: 'Completado', color: 'bg-slate-100 text-slate-500 border border-slate-200', alerta: '🏁' };
+  }
+  
+  if (!fechaVencimiento) {
+    // Paracaídas por si hay tickets viejos sin fecha de vencimiento calculada
+    return { texto: 'Sin Fecha', color: 'bg-slate-50 text-slate-500 border border-slate-200', alerta: '⚪' };
+  }
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0); // Normalizamos "hoy" a la medianoche para evitar líos con las horas
+
+  const vencimiento = new Date(fechaVencimiento);
+  vencimiento.setHours(0, 0, 0, 0); // Normalizamos a la medianoche
+
+  // Diferencia en milisegundos convertida a días
+  const diffTime = vencimiento - hoy;
+  const diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diasRestantes < 0) return { texto: 'Vencido', color: 'bg-red-50 text-red-600 border border-red-200', alerta: '🔴' };
+  if (diasRestantes <= 3) return { texto: 'Por Vencer', color: 'bg-orange-50 text-orange-600 border border-orange-200', alerta: '⚠️' };
+  return { texto: 'A Tiempo', color: 'bg-emerald-50 text-emerald-600 border border-emerald-200', alerta: '✅' };
+};
+
+
 // ✅ IMPORTANTE: Recibimos { permisos } del componente padre
 export default function DashboardAdmin({ permisos }) {
   const [usuarioActual, setUsuarioActual] = useState(null);
   const [ticketsGlobales, setTicketsGlobales] = useState([]);
   const [cargando, setCargando] = useState(true);
 
+  // Filtros
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroUsuario, setFiltroUsuario] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroInmueble, setFiltroInmueble] = useState('');
+  const [filtroSla, setFiltroSla] = useState(''); // 🔥 FILTRO SLA MANTENIDO
 
   const [ticketSeleccionado, setTicketSeleccionado] = useState(null);
   const [gestionEstado, setGestionEstado] = useState('');
@@ -50,8 +79,12 @@ export default function DashboardAdmin({ permisos }) {
     setCargando(true);
     try {
       let query = supabase.from('tickets').select('*').order('created_at', { ascending: false });
+      
+      // Filtramos por conjunto si no es el SuperAdmin (agente)
       if (user.rol !== 'agente') {
         query = query.or(`usuario_id.eq.${user.id},asignado_a.eq.${user.id}`);
+      } else {
+        query = query.eq('copropiedad_id', user.copropiedad_id);
       }
       
       const { data: tickets, error } = await query;
@@ -61,17 +94,10 @@ export default function DashboardAdmin({ permisos }) {
       const casosNuevos = (tickets || []).filter(t => t.estado === 'Abierto').length;
       if (casosNuevos > 0) {
         Swal.fire({
-          toast: true,
-          position: 'top-end',
-          icon: 'info',
-          title: `${casosNuevos} Nuevo(s) Caso(s)`,
-          text: 'Tienes tickets pendientes por revisar.',
-          showConfirmButton: false,
-          timer: 5000,
-          timerProgressBar: true,
-          background: '#0f172a',
-          color: '#ffffff',
-          iconColor: '#3b82f6'
+          toast: true, position: 'top-end', icon: 'info',
+          title: `${casosNuevos} Nuevo(s) Caso(s)`, text: 'Tienes tickets pendientes por revisar.',
+          showConfirmButton: false, timer: 5000, timerProgressBar: true,
+          background: '#0f172a', color: '#ffffff', iconColor: '#3b82f6'
         });
       }
 
@@ -93,31 +119,39 @@ export default function DashboardAdmin({ permisos }) {
     }
   };
 
+  // 🔥 Filtro Avanzado 🔥
   const ticketsFiltrados = useMemo(() => {
     return ticketsGlobales.filter(t => {
       const coincideEstado = filtroEstado === '' || t.estado.toLowerCase() === filtroEstado.toLowerCase();
       const coincideUsuario = filtroUsuario === '' || (t.nombre_usuario || '').toLowerCase().includes(filtroUsuario.toLowerCase());
       const coincideTipo = filtroTipo === '' || (t.categoria || '').toLowerCase() === filtroTipo.toLowerCase();
       const coincideInmueble = filtroInmueble === '' || (t.inmueble || '').toLowerCase().includes(filtroInmueble.toLowerCase());
-      return coincideEstado && coincideUsuario && coincideTipo && coincideInmueble;
-    });
-  }, [ticketsGlobales, filtroEstado, filtroUsuario, filtroTipo, filtroInmueble]);
+      
+      // Le pasamos la fecha_vencimiento de tu base de datos
+      const sla = calcularSLA(t.fecha_vencimiento, t.estado);
+      const coincideSla = filtroSla === '' || sla.texto === filtroSla;
 
+      return coincideEstado && coincideUsuario && coincideTipo && coincideInmueble && coincideSla;
+    });
+  }, [ticketsGlobales, filtroEstado, filtroUsuario, filtroTipo, filtroInmueble, filtroSla]);
+
+  // 🔥 Contadores Actualizados 🔥
   const stats = useMemo(() => {
-    let abiertos = 0; let proceso = 0; let cerrados = 0;
+    let abiertos = 0; let proceso = 0; let escalados = 0; let cerrados = 0;
     ticketsGlobales.forEach(t => {
       if (t.estado === 'Abierto') abiertos++;
-      else if (t.estado === 'En proceso' || t.estado === 'En Proceso' || t.estado === 'Escalado') proceso++;
+      else if (t.estado === 'En proceso' || t.estado === 'En Proceso') proceso++;
+      else if (t.estado === 'Escalado') escalados++;
       else if (t.estado === 'Cerrado' || t.estado === 'Resuelto') cerrados++;
     });
-    return { abiertos, proceso, cerrados, total: ticketsGlobales.length };
+    return { abiertos, proceso, escalados, cerrados, total: ticketsGlobales.length };
   }, [ticketsGlobales]);
 
   const dataGrafica = {
-    labels: ['Abierto', 'En Proceso', 'Cerrado'],
+    labels: ['Abierto', 'En Proceso', 'Escalado', 'Cerrado'],
     datasets: [{
-      data: [stats.abiertos, stats.proceso, stats.cerrados],
-      backgroundColor: ['#ef4444', '#f59e0b', '#22c55e'],
+      data: [stats.abiertos, stats.proceso, stats.escalados, stats.cerrados],
+      backgroundColor: ['#ef4444', '#f59e0b', '#8b5cf6', '#22c55e'],
       borderWidth: 0,
       hoverOffset: 10
     }]
@@ -125,21 +159,25 @@ export default function DashboardAdmin({ permisos }) {
 
   const exportarExcel = () => {
     if (ticketsGlobales.length === 0) return Swal.fire('Sin datos', 'No hay casos para exportar.', 'warning');
-    const datosParaExcel = ticketsGlobales.map(t => ({
-      'ID Caso': formatearCodigo(t.codigo_ticket),
-      'Fecha Radicado': new Date(t.created_at).toLocaleDateString(),
-      'Estado': t.estado,
-      'Usuario': `${t.nombre_usuario} (Apto ${t.inmueble})`,
-      'Categoría': t.categoria,
-      'Dependencia': t.dependencia,
-      'Descripción': t.descripcion,
-      'Link Evidencia': t.evidencia_url ? t.evidencia_url : 'Sin adjunto'
-    }));
+    const datosParaExcel = ticketsGlobales.map(t => {
+      const sla = calcularSLA(t.fecha_vencimiento, t.estado); // Usando fecha_vencimiento aquí
+      return {
+        'ID Caso': formatearCodigo(t.codigo_ticket),
+        'Fecha Radicado': new Date(t.created_at).toLocaleDateString(),
+        'Estado': t.estado,
+        'Tiempo de Respuesta': sla.texto,
+        'Usuario': `${t.nombre_usuario} (Apto ${t.inmueble})`,
+        'Categoría': t.categoria,
+        'Dependencia': t.dependencia,
+        'Descripción': t.descripcion,
+        'Link Evidencia': t.evidencia_url ? t.evidencia_url : 'Sin adjunto'
+      }
+    });
     const hoja = XLSX.utils.json_to_sheet(datosParaExcel);
-    hoja['!cols'] = [{ wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 35 }, { wch: 15 }, { wch: 20 }, { wch: 50 }, { wch: 30 }];
+    hoja['!cols'] = [{ wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 18 }, { wch: 35 }, { wch: 15 }, { wch: 20 }, { wch: 50 }, { wch: 30 }];
     const libro = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(libro, hoja, "Reporte_PQRs");
-    XLSX.writeFile(libro, `Reporte_CRM_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(libro, `Reporte_PQRS_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const abrirDetalle = (ticket) => {
@@ -153,20 +191,31 @@ export default function DashboardAdmin({ permisos }) {
   const evaluarEstadoEscalamiento = async (nuevoEstado) => {
     setGestionEstado(nuevoEstado);
     if (nuevoEstado === 'Escalado') {
-      const { data: conf } = await supabase.from('configuracion').select('codigo_staff').eq('id', 1).single();
-      const palabraClave = conf?.codigo_staff || 'STAFF';
+      const { data: conf } = await supabase
+        .from('configuracion')
+        .select('codigo_staff')
+        .eq('copropiedad_id', usuarioActual.copropiedad_id)
+        .maybeSingle();
+        
+      const palabraClave = conf?.codigo_staff || 'STAFF'; 
+      
       const { data: usuarios } = await supabase
         .from('usuarios')
         .select('id, nombre, email, rol, inmueble')
-        .eq('inmueble', palabraClave)
+        .eq('copropiedad_id', usuarioActual.copropiedad_id)
+        .ilike('inmueble', palabraClave.trim()) 
         .neq('id', usuarioActual.id);
+        
+      if (!usuarios || usuarios.length === 0) {
+        Swal.fire('Sin personal', 'No hay colaboradores (Staff) registrados con ese código.', 'info');
+      }
       setListaStaff(usuarios || []);
     }
   };
 
   const guardarGestionPQR = async () => {
     if (gestionEstado === 'Escalado' && !gestionAsignado) {
-      return Swal.fire('Atención', 'Selecciona a un usuario para escalar el caso.', 'warning');
+      return Swal.fire('Atención', 'Selecciona a un colaborador para escalar el caso.', 'warning');
     }
     
     setCargando(true);
@@ -223,7 +272,6 @@ export default function DashboardAdmin({ permisos }) {
           <p className="text-slate-500 font-medium">Panel de control y gestión operativa PQRS.</p>
         </div>
         
-        {/* ✅ BOTÓN PROTEGIDO POR ROL Y POR PLAN (permisos.exportar) */}
         {usuarioActual?.rol === 'agente' && permisos?.exportar && (
           <button onClick={exportarExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-2xl flex items-center shadow-lg shadow-emerald-200 transition-all transform hover:-translate-y-1">
             <span className="mr-2">📊</span> Exportar Reporte Excel
@@ -231,23 +279,34 @@ export default function DashboardAdmin({ permisos }) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* 🔥 4 TARJETAS DE MÉTRICAS 🔥 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><span className="text-7xl">📁</span></div>
+          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><span className="text-6xl">📁</span></div>
           <div className="relative z-10">
-            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Total Casos</p>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Total</p>
             <h3 className="text-4xl font-black text-slate-800">{stats.total}</h3>
           </div>
         </div>
+        
         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><span className="text-7xl">⏳</span></div>
+          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><span className="text-6xl">⏳</span></div>
           <div className="relative z-10">
-            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Pendientes</p>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">En Proceso</p>
             <h3 className="text-4xl font-black text-orange-500">{stats.abiertos + stats.proceso}</h3>
           </div>
         </div>
+
         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><span className="text-7xl">✅</span></div>
+          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><span className="text-6xl">👨‍💼</span></div>
+          <div className="relative z-10">
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Escalados</p>
+            <h3 className="text-4xl font-black text-purple-500">{stats.escalados}</h3>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><span className="text-6xl">✅</span></div>
           <div className="relative z-10">
             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Resueltos</p>
             <h3 className="text-4xl font-black text-emerald-500">{stats.cerrados}</h3>
@@ -257,21 +316,47 @@ export default function DashboardAdmin({ permisos }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-          <div className="p-6 bg-slate-50/50 border-b border-slate-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          
+          {/* 🔥 5 FILTROS INCLUYENDO EL DE TIEMPOS DE LEY 🔥 */}
+          <div className="p-6 bg-slate-50/50 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <input type="text" placeholder="Buscar residente..." value={filtroUsuario} onChange={e => setFiltroUsuario(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" />
+            
             <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">Cualquier Estado</option><option value="abierto">Abierto</option><option value="en proceso">En Proceso</option><option value="escalado">Escalado</option><option value="resuelto">Resuelto</option>
+              <option value="">Cualquier Estado</option>
+              <option value="abierto">Abierto</option>
+              <option value="en proceso">En Proceso</option>
+              <option value="escalado">Escalado</option>
+              <option value="resuelto">Resuelto</option>
             </select>
+            
             <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">Categoría...</option><option value="Petición">Petición</option><option value="Queja">Queja</option><option value="Reclamo">Reclamo</option>
+              <option value="">Categoría...</option>
+              <option value="Petición">Petición</option>
+              <option value="Queja">Queja</option>
+              <option value="Reclamo">Reclamo</option>
             </select>
-            <input type="text" placeholder="Inmueble (Ej: Apto 504)..." value={filtroInmueble} onChange={e => setFiltroInmueble(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" />
+            
+            <input type="text" placeholder="Inmueble..." value={filtroInmueble} onChange={e => setFiltroInmueble(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" />
+
+            <select value={filtroSla} onChange={e => setFiltroSla(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+              <option value="">⏱️ Tiempos (SLA)</option>
+              <option value="A Tiempo">✅ A Tiempo</option>
+              <option value="Por Vencer">⚠️ Por Vencer</option>
+              <option value="Vencido">🔴 Vencido</option>
+            </select>
           </div>
 
           <div className="overflow-x-auto p-2">
             <table className="w-full text-left text-xs whitespace-nowrap">
               <thead className="text-slate-400 font-bold uppercase text-[9px] tracking-widest border-b border-slate-50">
-                <tr><th className="p-4">Ticket ID</th><th className="p-4">Estado</th><th className="p-4">Fecha</th><th className="p-4">Usuario e Inmueble</th><th className="p-4">Tipo</th><th className="p-4">Dependencia</th></tr>
+                <tr>
+                  <th className="p-4">Ticket ID</th>
+                  <th className="p-4">Estado y Tiempos</th>
+                  <th className="p-4">Fecha Radicado</th>
+                  <th className="p-4">Usuario e Inmueble</th>
+                  <th className="p-4">Tipo</th>
+                  <th className="p-4">Dependencia</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {cargando && ticketsFiltrados.length === 0 ? (
@@ -280,13 +365,24 @@ export default function DashboardAdmin({ permisos }) {
                   let badge = 'bg-slate-100 text-slate-800';
                   if (t.estado === 'Abierto') badge = 'bg-red-50 text-red-600 border border-red-100';
                   if (t.estado === 'En proceso' || t.estado === 'En Proceso') badge = 'bg-orange-50 text-orange-600 border border-orange-100';
-                  if (t.estado === 'Escalado') badge = 'bg-orange-100 text-orange-700 border border-orange-200';
+                  if (t.estado === 'Escalado') badge = 'bg-purple-50 text-purple-700 border border-purple-200';
                   if (t.estado === 'Resuelto' || t.estado === 'Cerrado') badge = 'bg-emerald-50 text-emerald-600 border border-emerald-100';
                   
+                  // 🔥 CÁLCULO DE COLORES SLA EN TIEMPO REAL CON LA FECHA DE LA BD 🔥
+                  const slaInfo = calcularSLA(t.fecha_vencimiento, t.estado);
+
                   return (
                     <tr key={t.id} onClick={() => abrirDetalle(t)} className="hover:bg-slate-50 transition-colors cursor-pointer group">
                       <td className="p-4 font-mono font-bold text-blue-600">{formatearCodigo(t.codigo_ticket)}</td>
-                      <td className="p-4"><span className={`px-2 py-1 rounded-lg font-bold ${badge}`}>{t.estado}</span></td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`px-2 py-1 rounded-lg font-bold ${badge}`}>{t.estado}</span>
+                          {/* ETIQUETA ROJA/NARANJA/VERDE DE TIEMPOS */}
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest ${slaInfo.color}`}>
+                            {slaInfo.alerta} {slaInfo.texto}
+                          </span>
+                        </div>
+                      </td>
                       <td className="p-4 text-slate-500">{new Date(t.created_at).toLocaleDateString()}</td>
                       <td className="p-4">
                         <p className="font-bold text-slate-700">{t.nombre_usuario || 'Desconocido'}</p>
@@ -314,6 +410,7 @@ export default function DashboardAdmin({ permisos }) {
         </div>
       </div>
 
+      {/* MODAL DE GESTIÓN */}
       {ticketSeleccionado && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
@@ -394,9 +491,9 @@ export default function DashboardAdmin({ permisos }) {
                   {gestionEstado === 'Escalado' && (
                     <div className="animate-in fade-in slide-in-from-top-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Asignar Personal</label>
-                      <select value={gestionAsignado} onChange={e => setGestionAsignado(e.target.value)} className="w-full bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 text-xs outline-none focus:ring-2 focus:ring-orange-500 font-bold text-orange-900">
+                      <select value={gestionAsignado} onChange={e => setGestionAsignado(e.target.value)} className="w-full bg-purple-50 border border-purple-200 rounded-xl px-5 py-4 text-xs outline-none focus:ring-2 focus:ring-purple-500 font-bold text-purple-900">
                         <option value="">Seleccione...</option>
-                        {listaStaff.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                        {listaStaff.map(u => <option key={u.id} value={u.id}>{u.nombre} ({u.inmueble})</option>)}
                       </select>
                     </div>
                   )}

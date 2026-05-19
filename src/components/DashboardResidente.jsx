@@ -5,6 +5,9 @@ export default function DashboardResidente() {
   const [cargando, setCargando] = useState(true);
   const [usuarioInfo, setUsuarioInfo] = useState({ nombre: '', email: '', inmueble: '', id: '' });
   
+  // 🔥 NUEVO: ESTADO PARA SABER SI ES STAFF/COLABORADOR
+  const [isStaff, setIsStaff] = useState(false);
+  
   // ESTADOS DE PERMISOS SAAS
   const [permisos, setPermisos] = useState({
     pqrs: true, 
@@ -17,9 +20,8 @@ export default function DashboardResidente() {
   // Contadores y Datos
   const [stats, setStats] = useState({ pqrs: 0, reservas: 0, llamados: 0, paquetes: 0 });
   const [enlacesPago, setEnlacesPago] = useState([]);
-
-  // 🔥 NUEVO ESTADO: LOS RECIBOS
   const [alertasRecibos, setAlertasRecibos] = useState([]);
+  const [misParqueaderos, setMisParqueaderos] = useState([]);
 
   useEffect(() => {
     cargarDashboard();
@@ -33,15 +35,15 @@ export default function DashboardResidente() {
       
       if (!user || !copropiedadId) return;
 
-      // 1. 🔥 CORRECCIÓN DEL INMUEBLE: Buscamos por EMAIL en lugar de ID
+      // 1. Buscamos por EMAIL en lugar de ID
       const { data: userData } = await supabase
         .from('usuarios')
-        .select('inmueble, nombre_completo')
-        .eq('email', user.email) // El email NUNCA falla
+        .select('inmueble, nombre') // 🔥 CORREGIDO
+        .eq('email', user.email)
         .maybeSingle();
 
       const inmuebleReal = userData?.inmueble || user.user_metadata?.inmueble || 'Sin Inmueble';
-      const nombreReal = userData?.nombre_completo || user.user_metadata?.nombre || 'Residente';
+      const nombreReal = userData?.nombre || user.user_metadata?.nombre || 'Residente'; // 🔥 CORREGIDO
 
       setUsuarioInfo({
         id: user.id,
@@ -50,7 +52,18 @@ export default function DashboardResidente() {
         inmueble: inmuebleReal
       });
 
-      // 2. CARGAMOS LOS PERMISOS DEL CONJUNTO
+      // 🔥 MAGIA: BUSCAMOS EL CÓDIGO STAFF EN CONFIGURACIÓN 🔥
+      const { data: configData } = await supabase
+        .from('configuracion')
+        .select('codigo_staff')
+        .eq('copropiedad_id', copropiedadId)
+        .maybeSingle();
+
+      // Verificamos si el inmueble del usuario coincide con la llave maestra del staff
+      const esColaborador = configData?.codigo_staff && inmuebleReal === configData.codigo_staff;
+      setIsStaff(esColaborador);
+
+      // CARGAMOS LOS PERMISOS DEL CONJUNTO
       const { data: configSaas } = await supabase
         .from('clientes_saas')
         .select('*')
@@ -67,7 +80,7 @@ export default function DashboardResidente() {
         });
       }
 
-      // 🔥 MAGIA: CARGAMOS LOS AVISOS DE RECIBOS ACTIVOS
+      // CARGAMOS LOS AVISOS DE RECIBOS ACTIVOS
       const { data: recibosActivos } = await supabase
         .from('notificaciones_recibos')
         .select('*')
@@ -76,47 +89,58 @@ export default function DashboardResidente() {
         
       setAlertasRecibos(recibosActivos || []);
 
-      // 3. CONSULTAS SIMULTÁNEAS DE ESTADÍSTICAS
-      const promesasDatos = [
-        supabase.from('tickets').select('id', { count: 'exact' }).eq('copropiedad_id', copropiedadId).eq('email', user.email)
-      ];
+      // CONSULTAS SIMULTÁNEAS
+      const promesasDatos = [];
 
-      // Llamados (Solo la cuenta, sin traer la tabla)
-      if (configSaas?.mod_convivencia !== false) {
+      // 🔥 Si es Staff, contamos TODOS los tickets abiertos del conjunto. Si es residente, solo los suyos.
+      if (esColaborador) {
+        promesasDatos.push(supabase.from('tickets').select('id', { count: 'exact' }).eq('copropiedad_id', copropiedadId).neq('estado', 'Resuelto'));
+      } else {
+        promesasDatos.push(supabase.from('tickets').select('id', { count: 'exact' }).eq('copropiedad_id', copropiedadId).eq('email', user.email));
+      }
+
+      if (configSaas?.mod_convivencia !== false && !esColaborador) {
         promesasDatos.push(supabase.from('llamados_atencion').select('id', { count: 'exact' }).eq('copropiedad_id', copropiedadId).eq('usuario_id', user.id));
       } else {
         promesasDatos.push(Promise.resolve({ count: 0 }));
       }
 
-      // Pagos
-      if (configSaas?.mod_pagos !== false) {
+      if (configSaas?.mod_pagos !== false && !esColaborador) {
         promesasDatos.push(supabase.from('configuracion_pagos').select('*').eq('copropiedad_id', copropiedadId));
       } else {
         promesasDatos.push(Promise.resolve({ data: [] }));
       }
 
-      // Paquetes en Portería usando el Inmueble Real
-      promesasDatos.push(
-        supabase.from('registro_recepcion')
-          .select('id', { count: 'exact' })
-          .eq('copropiedad_id', copropiedadId)
-          .eq('inmueble', inmuebleReal) // Ahora buscará '2101'
-          .in('tipo_registro', ['Paquete', 'Domicilio'])
-          .neq('estado', 'Entregado')
-      );
+      if (!esColaborador) {
+        promesasDatos.push(
+          supabase.from('registro_recepcion')
+            .select('id', { count: 'exact' })
+            .eq('copropiedad_id', copropiedadId)
+            .eq('inmueble', inmuebleReal)
+            .in('tipo_registro', ['Paquete', 'Domicilio'])
+            .neq('estado', 'Entregado')
+        );
+        promesasDatos.push(
+          supabase.from('parqueaderos_asignados')
+            .select('*')
+            .eq('copropiedad_id', copropiedadId)
+            .eq('inmueble', inmuebleReal)
+        );
+      } else {
+        promesasDatos.push(Promise.resolve({ count: 0 }));
+        promesasDatos.push(Promise.resolve({ data: [] }));
+      }
 
-      const [resPqrs, resLlamados, resPagos, resPaquetes] = await Promise.all(promesasDatos);
+      const [resPqrs, resLlamados, resPagos, resPaquetes, resParqueaderos] = await Promise.all(promesasDatos);
 
-      // Reservas
       let totalReservas = 0;
-      if (configSaas?.mod_reservas !== false) {
+      if (configSaas?.mod_reservas !== false && !esColaborador) {
         try {
           const { count } = await supabase.from('reservas').select('id', { count: 'exact' }).eq('copropiedad_id', copropiedadId).eq('usuario_id', user.id);
           totalReservas = count || 0;
         } catch (e) { /* Ignorar si no hay tabla reservas aún */ }
       }
 
-      // 4. SETEAMOS TODOS LOS DATOS
       setStats({
         pqrs: resPqrs.count || 0,
         reservas: totalReservas,
@@ -125,6 +149,7 @@ export default function DashboardResidente() {
       });
 
       setEnlacesPago(resPagos.data || []);
+      setMisParqueaderos(resParqueaderos.data || []); 
 
     } catch (error) {
       console.error("Error cargando dashboard:", error);
@@ -141,12 +166,51 @@ export default function DashboardResidente() {
     );
   }
 
+  // =========================================================
+  // 🔥 VISTA EXCLUSIVA PARA EL STAFF / COLABORADOR 🔥
+  // =========================================================
+  if (isStaff) {
+    return (
+      <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in zoom-in duration-500 mt-10">
+        <div className="bg-slate-900 p-10 md:p-14 rounded-[3rem] shadow-2xl border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden">
+          {/* Luces de fondo estilo neón */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 rounded-full blur-[100px] opacity-20 pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500 rounded-full blur-[100px] opacity-20 pointer-events-none"></div>
+          
+          <div className="relative z-10 text-center md:text-left">
+            <div className="inline-block bg-indigo-500/20 text-indigo-300 font-black tracking-widest uppercase text-[10px] px-4 py-1.5 rounded-full mb-4 border border-indigo-500/30">
+              Modo Colaborador Activo 🛡️
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-white tracking-tight mb-2">
+              Hola, {usuarioInfo.nombre.split(' ')[0]}
+            </h2>
+            <p className="text-slate-400 font-medium text-lg">
+              Panel exclusivo para respuesta a PQRS y Casos.
+            </p>
+          </div>
+
+          <div className="relative z-10 bg-white/5 border border-white/10 p-6 rounded-3xl text-center w-full md:w-auto backdrop-blur-md">
+            <div className="text-5xl font-black text-white mb-1">{stats.pqrs}</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-slate-400">Casos Activos</div>
+          </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center shadow-sm">
+          <div className="text-6xl mb-4">💬</div>
+          <h3 className="text-2xl font-black text-slate-800">Bandeja de Resolución</h3>
+          <p className="text-slate-500 mt-2 mb-6">Por favor, dirígete al menú lateral y selecciona <strong>"Atención al Residente" (PQRS)</strong> para gestionar y responder los tickets que el administrador ha escalado para ti.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================
+  // VISTA NORMAL PARA RESIDENTES (Se mantiene intacta)
+  // =========================================================
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-700">
       
-      {/* =========================================================
-          1. HEADER SÚPER LIMPIO Y MODERNO
-          ========================================================= */}
+      {/* 1. HEADER SÚPER LIMPIO Y MODERNO */}
       <div className="bg-white p-8 md:p-10 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 overflow-hidden relative">
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-3xl opacity-60 -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         
@@ -160,7 +224,6 @@ export default function DashboardResidente() {
           </p>
         </div>
 
-        {/* Resumen rápido opcional */}
         <div className="hidden lg:flex gap-4 relative z-10">
           <div className="text-right">
             <p className="text-slate-400 text-xs font-bold uppercase">Estado Actual</p>
@@ -169,12 +232,10 @@ export default function DashboardResidente() {
         </div>
       </div>
 
-      {/* =========================================================
-          2. DISEÑO BENTO BOX (CUADRÍCULA MODERNA Y ESPACIOSA)
-          ========================================================= */}
+      {/* 2. DISEÑO BENTO BOX */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
 
-        {/* 🧾 TARJETA GIGANTE: RECIBOS PÚBLICOS (COL-SPAN-12) */}
+        {/* 🧾 TARJETA GIGANTE: RECIBOS PÚBLICOS */}
         <div className={`col-span-1 md:col-span-12 p-8 md:p-10 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between transition-all duration-500 border ${alertasRecibos.length > 0 ? 'bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-xl shadow-blue-500/30 border-transparent animate-pulse-slow' : 'bg-white border-slate-100'}`}>
           <div className="flex items-center gap-6 mb-4 md:mb-0">
             <div className={`w-20 h-20 rounded-3xl flex items-center justify-center text-4xl shadow-inner ${alertasRecibos.length > 0 ? 'bg-white/20 backdrop-blur-md' : 'bg-slate-50 text-slate-300 grayscale'}`}>
@@ -191,12 +252,10 @@ export default function DashboardResidente() {
           </div>
 
           <div className="flex flex-wrap justify-center gap-3">
-            {/* Si no hay recibos, mostramos un mensaje gris */}
             {alertasRecibos.length === 0 && (
               <span className="text-slate-400 font-medium text-sm italic">No hay facturas pendientes en portería.</span>
             )}
             
-            {/* Si hay recibos, mostramos las burbujas brillantes */}
             {alertasRecibos.map(recibo => (
               <div key={recibo.id} className="bg-white text-indigo-700 font-black px-6 py-3 rounded-2xl shadow-lg flex items-center gap-2 transform hover:scale-105 transition-transform cursor-default">
                 <span className="animate-ping w-2 h-2 rounded-full bg-red-500"></span>
@@ -206,7 +265,7 @@ export default function DashboardResidente() {
           </div>
         </div>
 
-        {/* 📦 TARJETA GIGANTE: PAQUETES (COL-SPAN-8) */}
+        {/* 📦 TARJETA GIGANTE: PAQUETES */}
         {permisos.recepcion && (
           <div className={`col-span-1 md:col-span-8 p-8 md:p-10 rounded-[2.5rem] flex items-center justify-between transition-all duration-300 border shadow-sm ${stats.paquetes > 0 ? 'bg-gradient-to-r from-amber-400 to-orange-500 border-transparent text-white shadow-orange-500/20' : 'bg-white border-slate-100 text-slate-800'}`}>
             <div>
@@ -226,14 +285,13 @@ export default function DashboardResidente() {
               )}
             </div>
             
-            {/* Ícono gigante decorativo */}
             <div className={`hidden sm:block text-[8rem] md:text-[10rem] opacity-20 transform rotate-12 transition-transform duration-500 hover:scale-110 ${stats.paquetes > 0 ? 'text-white' : 'text-slate-300'}`}>
               🚚
             </div>
           </div>
         )}
 
-        {/* 🚨 TARJETA COMPACTA: CONVIVENCIA (COL-SPAN-4) */}
+        {/* 🚨 TARJETA COMPACTA: CONVIVENCIA */}
         {permisos.llamados && (
           <div className={`col-span-1 md:col-span-4 p-8 md:p-10 rounded-[2.5rem] flex flex-col justify-between transition-all duration-300 border shadow-sm group ${stats.llamados > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-slate-100'}`}>
             <div>
@@ -247,15 +305,10 @@ export default function DashboardResidente() {
                 Llamados / Novedades
               </p>
             </div>
-            <div className="mt-8">
-              <span className={`text-sm font-bold flex items-center gap-2 ${stats.llamados > 0 ? 'text-red-600' : 'text-slate-400'}`}>
-                Ver en el menú <span className="group-hover:translate-x-1 transition-transform">→</span>
-              </span>
-            </div>
           </div>
         )}
 
-        {/* 📋 TARJETA CUADRADA: PQRS (COL-SPAN-4) */}
+        {/* 💬 TARJETA CUADRADA: PQRS */}
         {permisos.pqrs && (
           <div className="col-span-1 md:col-span-4 p-8 md:p-10 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 hover:shadow-lg transition-shadow group">
             <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">
@@ -266,7 +319,7 @@ export default function DashboardResidente() {
           </div>
         )}
 
-        {/* 📅 TARJETA CUADRADA: RESERVAS (COL-SPAN-4) */}
+        {/* 📅 TARJETA CUADRADA: RESERVAS */}
         {permisos.reservas && (
           <div className="col-span-1 md:col-span-4 p-8 md:p-10 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 hover:shadow-lg transition-shadow group">
             <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">
@@ -277,7 +330,7 @@ export default function DashboardResidente() {
           </div>
         )}
 
-        {/* 💳 TARJETA ALARGADA: PAGOS (COL-SPAN-4 o MÁS) */}
+        {/* 💳 TARJETA ALARGADA: PAGOS */}
         {permisos.pagos && (
           <div className="col-span-1 md:col-span-4 p-8 md:p-10 bg-slate-900 rounded-[2.5rem] shadow-xl shadow-slate-900/20 text-white flex flex-col justify-between">
             <div>
@@ -290,7 +343,7 @@ export default function DashboardResidente() {
             
             <div className="mt-8 space-y-3">
               {enlacesPago.length > 0 ? (
-                enlacesPago.slice(0, 2).map(pago => ( // Mostramos máximo 2 para no romper el diseño
+                enlacesPago.slice(0, 2).map(pago => (
                   <a key={pago.id} href={pago.url_pago} target="_blank" rel="noreferrer" className="flex items-center justify-between p-4 rounded-2xl bg-blue-600 hover:bg-blue-500 transition-colors group">
                     <span className="font-bold text-sm truncate pr-2">{pago.titulo}</span>
                     <span className="font-black group-hover:translate-x-1 transition-transform">→</span>
@@ -301,6 +354,36 @@ export default function DashboardResidente() {
                   Sin enlaces configurados
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* 🔥 TARJETA VIP: MI PARQUEADERO */}
+        {misParqueaderos.length > 0 && (
+          <div className="col-span-1 md:col-span-4 p-8 md:p-10 bg-teal-950 rounded-[2.5rem] shadow-xl shadow-teal-900/20 text-white flex flex-col justify-between overflow-hidden relative group">
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-teal-500/20 blur-3xl rounded-full group-hover:bg-teal-400/30 transition-colors duration-500 pointer-events-none"></div>
+
+            <div className="relative z-10">
+              <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center text-3xl mb-6 border border-white/10 backdrop-blur-sm group-hover:scale-110 transition-transform">
+                {misParqueaderos[0].tipo_parqueadero === 'Moto' ? '🏍️' : '🚘'}
+              </div>
+              <h3 className="text-4xl md:text-5xl font-black tracking-tighter mb-1 text-teal-300">
+                {misParqueaderos[0].numero_parqueadero}
+              </h3>
+              <p className="text-[10px] font-black text-teal-500 uppercase tracking-widest">
+                Parqueadero Asignado
+              </p>
+            </div>
+            
+            <div className="mt-8 space-y-2 relative z-10">
+              {misParqueaderos.map(p => (
+                <div key={p.id} className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
+                  <span className="font-medium text-xs text-teal-100/70">{p.tipo_vehiculo}</span>
+                  <span className="font-black font-mono text-sm tracking-[0.2em] bg-teal-400/20 text-teal-300 px-3 py-1 rounded-lg">
+                    {p.placa}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
