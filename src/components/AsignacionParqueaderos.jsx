@@ -79,6 +79,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     setDropdownAbierto(false); 
   };
 
+  // 🔥 MEJORA 1: Especificar el contentType para que el Iframe lo pueda leer 🔥
   const subirArchivo = async (archivo, tipoDoc) => {
     if (!archivo) return null;
     const fileExt = archivo.name.split('.').pop();
@@ -86,7 +87,11 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     
     const { data, error } = await supabase.storage
       .from('documentos_vehiculos')
-      .upload(fileName, archivo);
+      .upload(fileName, archivo, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: archivo.type // Esto le dice al navegador "Soy un PDF" o "Soy una imagen"
+      });
 
     if (error) {
       console.error(`Error subiendo ${tipoDoc}:`, error);
@@ -143,26 +148,39 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const eliminarAsignacion = async (id, placaVehiculo) => {
+  // 🔥 MEJORA 2: Borrar los archivos del Storage para no dejar basura 🔥
+  const eliminarAsignacion = async (asig) => {
     const { isConfirmed } = await Swal.fire({
       title: '¿Eliminar registro?',
-      text: `Estás a punto de borrar la asignación de la placa ${placaVehiculo}. Esta acción no se puede deshacer.`,
+      text: `Estás a punto de borrar la asignación de la placa ${asig.placa}. Esta acción no se puede deshacer y borrará permanentemente sus documentos.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#ef4444',
       cancelButtonColor: '#9ca3af',
-      confirmButtonText: 'Sí, eliminar',
+      confirmButtonText: 'Sí, eliminar todo',
       cancelButtonText: 'Cancelar'
     });
 
     if (isConfirmed) {
-      const { error } = await supabase.from('parqueaderos_asignados').delete().eq('id', id);
+      // 1. Borrar de la base de datos primero
+      const { error } = await supabase.from('parqueaderos_asignados').delete().eq('id', asig.id);
+      
       if (error) {
         Swal.fire('Error', 'No se pudo eliminar el registro.', 'error');
       } else {
-        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Borrado correctamente', showConfirmButton: false, timer: 1500 });
+        // 2. Si se borró de la BD, buscamos los archivos en el Storage y los destruimos
+        const urls = [asig.doc_tarjeta_propiedad, asig.doc_soat, asig.doc_tecnomecanica].filter(Boolean);
+        
+        if (urls.length > 0) {
+          // Extraemos solo el nombre del archivo al final de la URL
+          const filesToDelete = urls.map(url => decodeURIComponent(url.split('/').pop()));
+          const { error: errStorage } = await supabase.storage.from('documentos_vehiculos').remove(filesToDelete);
+          if (errStorage) console.error("Error limpiando basura:", errStorage);
+        }
+
+        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Registro y archivos borrados', showConfirmButton: false, timer: 2000 });
         cargarAsignaciones();
-        if (modoEdicion && idEdicion === id) limpiarFormulario(); 
+        if (modoEdicion && idEdicion === asig.id) limpiarFormulario(); 
       }
     }
   };
@@ -193,10 +211,23 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
       };
 
       if (modoEdicion) {
+        // ACTUALIZAR BD
         const { error } = await supabase.from('parqueaderos_asignados').update(payload).eq('id', idEdicion);
         if (error) throw error;
+        
+        // 🔥 MEJORA 3: Limpiar basura si reemplazaron un archivo viejo 🔥
+        let archivosReemplazados = [];
+        if (docTarjeta && urlsExistentes.tarjeta) archivosReemplazados.push(decodeURIComponent(urlsExistentes.tarjeta.split('/').pop()));
+        if (docSoat && urlsExistentes.soat) archivosReemplazados.push(decodeURIComponent(urlsExistentes.soat.split('/').pop()));
+        if (docTecno && urlsExistentes.tecno) archivosReemplazados.push(decodeURIComponent(urlsExistentes.tecno.split('/').pop()));
+        
+        if (archivosReemplazados.length > 0) {
+          await supabase.storage.from('documentos_vehiculos').remove(archivosReemplazados);
+        }
+
         Swal.fire('¡Actualizado!', 'El registro fue modificado con éxito.', 'success');
       } else {
+        // CREAR NUEVO
         const { error } = await supabase.from('parqueaderos_asignados').insert([payload]);
         if (error) throw error;
         Swal.fire('¡Éxito!', 'Parqueadero asignado y documentos guardados.', 'success');
@@ -317,17 +348,17 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
           <div className="bg-white p-3 rounded border border-slate-200 hover:border-blue-400 transition-colors shadow-sm">
             <label className="text-xs font-black text-[#00A6FB] block mb-2 uppercase">📄 Tarjeta de Propiedad</label>
             <input id="input-tarjeta" type="file" accept=".pdf,image/*" onChange={(e) => setDocTarjeta(e.target.files[0])} className="text-xs w-full text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-            {modoEdicion && urlsExistentes.tarjeta && !docTarjeta && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento ya subido</p>}
+            {modoEdicion && urlsExistentes.tarjeta && !docTarjeta && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento actual se conserva</p>}
           </div>
           <div className="bg-white p-3 rounded border border-slate-200 hover:border-emerald-400 transition-colors shadow-sm">
             <label className="text-xs font-black text-emerald-600 block mb-2 uppercase">🛡️ SOAT Vigente</label>
             <input id="input-soat" type="file" accept=".pdf,image/*" onChange={(e) => setDocSoat(e.target.files[0])} className="text-xs w-full text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100" />
-            {modoEdicion && urlsExistentes.soat && !docSoat && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento ya subido</p>}
+            {modoEdicion && urlsExistentes.soat && !docSoat && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento actual se conserva</p>}
           </div>
           <div className="bg-white p-3 rounded border border-slate-200 hover:border-amber-400 transition-colors shadow-sm">
             <label className="text-xs font-black text-amber-600 block mb-2 uppercase">🔧 Tecnomecánica</label>
             <input id="input-tecno" type="file" accept=".pdf,image/*" onChange={(e) => setDocTecno(e.target.files[0])} className="text-xs w-full text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100" />
-            {modoEdicion && urlsExistentes.tecno && !docTecno && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento ya subido</p>}
+            {modoEdicion && urlsExistentes.tecno && !docTecno && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento actual se conserva</p>}
           </div>
         </div>
 
@@ -399,12 +430,13 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
                   </div>
                 </td>
                 
+                {/* Ojo aquí: ahora le pasamos el objeto COMPLETO (asig) para poder sacar los nombres de los archivos */}
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-2">
                     <button onClick={() => editarAsignacion(asig)} className="p-2 bg-amber-100 text-amber-600 rounded-lg hover:bg-amber-200 shadow-sm" title="Editar Asignación">
                       ✏️
                     </button>
-                    <button onClick={() => eliminarAsignacion(asig.id, asig.placa)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 shadow-sm" title="Eliminar Asignación">
+                    <button onClick={() => eliminarAsignacion(asig)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 shadow-sm" title="Eliminar Asignación">
                       🗑️
                     </button>
                   </div>
@@ -427,7 +459,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
       </div>
 
       {/* ============================================================== */}
-      {/* 🔥 MODAL IFRAME PARA VER DOCUMENTOS (MAGIA PURA) 🔥            */}
+      {/* 🔥 MODAL IFRAME PARA VER DOCUMENTOS 🔥                         */}
       {/* ============================================================== */}
       {documentoIframe && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -454,15 +486,15 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
               />
             </div>
             
-            <div className="bg-slate-50 p-3 border-t border-slate-200 text-center z-10">
-              <p className="text-xs text-slate-500 mb-1">Si el documento no se visualiza correctamente por bloqueos del navegador:</p>
+            <div className="bg-slate-50 p-3 border-t border-slate-200 text-center z-10 flex flex-col gap-1">
+              <p className="text-xs text-slate-500">Si subiste el archivo antes de la última actualización, puede que no se visualice aquí y debas abrirlo en otra pestaña.</p>
               <a 
                 href={documentoIframe} 
                 target="_blank" 
                 rel="noreferrer" 
                 className="text-sm font-black text-[#00A6FB] hover:underline"
               >
-                🔗 Clic aquí para abrir el archivo en una pestaña nueva
+                🔗 Clic aquí para abrir o descargar el archivo en una pestaña nueva
               </a>
             </div>
             
