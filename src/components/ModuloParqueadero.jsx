@@ -6,6 +6,9 @@ export default function ModuloParqueadero({ turno }) {
   // Pestañas de la vista del guarda
   const [pestanaActiva, setPestanaActiva] = useState('adentro');
 
+  // 🔥 NUEVO ESTADO PARA EL OJITO (Mostrar/Ocultar dinero) 🔥
+  const [mostrarValores, setMostrarValores] = useState(false);
+
   // Estados del Formulario de Ingreso
   const [placa, setPlaca] = useState('');
   const [tipoVehiculo, setTipoVehiculo] = useState('Carro');
@@ -279,14 +282,21 @@ export default function ModuloParqueadero({ turno }) {
         {/* PANEL DERECHO: PESTAÑAS (ADENTRO vs HISTORIAL) */}
         <div className="xl:col-span-2 flex flex-col space-y-4">
           
-          {/* TOTALIZADOR DE CAJA DEL TURNO */}
+          {/* 🔥 TOTALIZADOR DE CAJA DEL TURNO CON OJITO 🔥 */}
           <div className="bg-emerald-500 rounded-2xl shadow-lg p-6 flex justify-between items-center text-white">
             <div>
               <h3 className="text-emerald-100 font-bold uppercase text-sm tracking-wider">Caja Actual de tu Turno</h3>
               <p className="text-sm opacity-80 mt-1">Dinero que debes entregar al terminar</p>
             </div>
-            <div className="text-4xl font-black">
-              ${totalRecaudado.toLocaleString()}
+            <div className="text-4xl font-black flex items-center gap-3">
+              <span>{mostrarValores ? `$${totalRecaudado.toLocaleString()}` : '••••••'}</span>
+              <button 
+                onClick={() => setMostrarValores(!mostrarValores)} 
+                className="text-2xl opacity-70 hover:opacity-100 hover:scale-110 transition-all focus:outline-none"
+                title={mostrarValores ? "Ocultar valor" : "Ver valor"}
+              >
+                {mostrarValores ? '👁️' : '🙈'}
+              </button>
             </div>
           </div>
 
@@ -361,7 +371,10 @@ export default function ModuloParqueadero({ turno }) {
                           <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
                             {h.correo_visitante ? <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs">✔️ Enviada</span> : <span className="text-gray-400 text-xs">Físico</span>}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-right font-black text-emerald-600">${Number(h.valor_total).toLocaleString()}</td>
+                          {/* 🔥 VALOR OCULTO CON EL OJITO 🔥 */}
+                          <td className="px-4 py-3 whitespace-nowrap text-right font-black text-emerald-600">
+                            {mostrarValores ? `$${Number(h.valor_total).toLocaleString()}` : '••••••'}
+                          </td>
                         </tr>
                       ))
                     )}

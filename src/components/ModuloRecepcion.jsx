@@ -23,6 +23,9 @@ export default function ModuloRecepcion({ turno }) {
   const [paquetesPendientes, setPaquetesPendientes] = useState([]);
   const [paquetesEntregados, setPaquetesEntregados] = useState([]);
 
+  // 🔥 NUEVO: Estado para abrir la tarjeta de "Ver detalle" 🔥
+  const [paqueteDetalle, setPaqueteDetalle] = useState(null);
+
   // Estados para el Modal de Entrega Fotográfica
   const [paqueteAEntregar, setPaqueteAEntregar] = useState(null);
   const [fotoEntrega, setFotoEntrega] = useState(null);
@@ -114,8 +117,7 @@ export default function ModuloRecepcion({ turno }) {
       Swal.fire({ title: '¡Registrado!', text: `Se registró correctamente.`, icon: 'success', timer: 2000 });
 
       // ==========================================
-      // 🚀 MAGIA: AVISO AL CORREO DEL RESIDENTE VÍA RESEND
-      // Se ejecuta en segundo plano para no bloquear al celador
+      // 🚀 AVISO AL CORREO DEL RESIDENTE VÍA RESEND
       // ==========================================
       supabase.from('usuarios')
         .select('email')
@@ -309,83 +311,206 @@ export default function ModuloRecepcion({ turno }) {
         </div>
       )}
 
-      {/* PESTAÑA 2: ENTREGAS PENDIENTES */}
+      {/* 🔥 PESTAÑA 2: ENTREGAS PENDIENTES (AHORA EN TABLA) 🔥 */}
       {pestana === 'entregas' && (
         <div className="bg-white p-6 rounded-2xl shadow-xl animate-in fade-in">
-          <div className="flex justify-between items-center mb-4 border-b pb-4">
+          <div className="flex justify-between items-center mb-6 border-b pb-4">
              <h2 className="text-xl font-black text-slate-800">📦 Pendientes en Portería</h2>
              <button onClick={cargarPaquetesPendientes} className="text-indigo-600 font-bold hover:underline">🔄 Refrescar</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {paquetesPendientes.length === 0 ? (
-              <p className="col-span-full text-center text-slate-500 py-10 italic">No hay paquetes pendientes. ¡Portería al día! ✨</p>
-            ) : (
-              paquetesPendientes.map(paquete => (
-                <div key={paquete.id} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                  <div className="h-40 bg-slate-100">
-                    {paquete.foto_url ? (
-                      <img src={paquete.foto_url} alt="Paquete" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-3xl">📦</div>
-                    )}
-                  </div>
-                  <div className="p-4 flex-1 flex flex-col">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2 py-1 rounded">Apto {paquete.inmueble}</span>
-                      <span className="text-xs text-slate-400">{paquete.fecha_ingreso ? new Date(paquete.fecha_ingreso).toLocaleDateString() : 'Sin fecha'}</span>
-                    </div>
-                    <h3 className="font-bold text-slate-800 text-lg">{paquete.nombre_visitante_o_empresa}</h3>
-                    <p className="text-xs text-slate-500 mb-4 flex-1">Guía: {paquete.cedula_o_guia || 'N/A'}</p>
-                    <button onClick={() => setPaqueteAEntregar(paquete)} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition">
-                      📸 Tomar Foto y Entregar
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
+          
+          <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+            <table className="w-full text-left bg-white text-sm">
+              <thead className="bg-slate-800 text-white">
+                <tr>
+                  <th className="p-4 font-bold">Inmueble</th>
+                  <th className="p-4 font-bold">Tipo</th>
+                  <th className="p-4 font-bold">Destinatario / Remitente</th>
+                  <th className="p-4 font-bold">Fecha de Ingreso</th>
+                  <th className="p-4 font-bold text-center">Acción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y border-slate-100">
+                {paquetesPendientes.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="p-10 text-center">
+                      <div className="text-slate-400 font-bold italic text-lg">No hay paquetes pendientes. ¡Portería al día! ✨</div>
+                    </td>
+                  </tr>
+                ) : (
+                  paquetesPendientes.map(paquete => (
+                    <tr key={paquete.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 font-black text-indigo-700 text-lg">Apto {paquete.inmueble}</td>
+                      <td className="p-4">
+                        <span className="bg-slate-200 text-slate-700 px-3 py-1 rounded-lg text-xs font-bold">{paquete.tipo_registro}</span>
+                      </td>
+                      <td className="p-4">
+                        <span className="block font-bold text-slate-800">{paquete.nombre_visitante_o_empresa}</span>
+                        <span className="text-xs text-slate-500 block">Guía: {paquete.cedula_o_guia || 'N/A'}</span>
+                      </td>
+                      <td className="p-4 text-xs text-slate-600 font-medium">
+                        {paquete.fecha_ingreso ? new Date(paquete.fecha_ingreso).toLocaleString() : 'Sin fecha'}
+                      </td>
+                      <td className="p-4 text-center">
+                        <button 
+                          onClick={() => setPaqueteDetalle(paquete)} 
+                          className="bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-200 transition-colors shadow-sm w-full md:w-auto"
+                        >
+                          👁️ Ver Detalle
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* PESTAÑA 3: HISTORIAL CON AMBAS FOTOS */}
+      {/* 🔥 PESTAÑA 3: HISTORIAL DE ENTREGAS (AHORA EN TABLA) 🔥 */}
       {pestana === 'historial' && (
         <div className="bg-white p-6 rounded-2xl shadow-xl animate-in fade-in">
-          <div className="flex justify-between items-center mb-4 border-b pb-4">
+          <div className="flex justify-between items-center mb-6 border-b pb-4">
              <h2 className="text-xl font-black text-slate-800">✅ Historial de Entregados</h2>
              <button onClick={cargarPaquetesEntregados} className="text-indigo-600 font-bold hover:underline">🔄 Refrescar</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {paquetesEntregados.length === 0 ? (
-              <p className="col-span-full text-center text-slate-500 py-10 italic">Aún no hay registro de entregas.</p>
-            ) : (
-              paquetesEntregados.map(paquete => (
-                <div key={paquete.id} className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col opacity-90 hover:opacity-100 transition-opacity bg-slate-50">
-                  <div className="h-32 flex relative bg-slate-200">
-                    <div className="w-1/2 h-full border-r border-slate-300 relative">
-                      {paquete.foto_url ? <img src={paquete.foto_url} alt="Llegada" className="w-full h-full object-cover grayscale" /> : <span className="flex h-full items-center justify-center text-xs text-slate-400">Sin foto</span>}
-                      <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1 rounded">Llegada</span>
-                    </div>
-                    <div className="w-1/2 h-full relative">
-                      {paquete.foto_entrega ? <img src={paquete.foto_entrega} alt="Entrega" className="w-full h-full object-cover" /> : <span className="flex h-full items-center justify-center text-xs text-slate-400">Sin foto</span>}
-                      <span className="absolute bottom-1 left-1 bg-emerald-500/80 text-white text-[9px] px-1 rounded">Quien Recibe</span>
-                    </div>
+          
+          <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+            <table className="w-full text-left bg-white text-sm">
+              <thead className="bg-slate-800 text-white">
+                <tr>
+                  <th className="p-4 font-bold">Inmueble</th>
+                  <th className="p-4 font-bold">Tipo</th>
+                  <th className="p-4 font-bold">Destinatario / Remitente</th>
+                  <th className="p-4 font-bold">Fecha de Entrega</th>
+                  <th className="p-4 font-bold text-center">Acción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y border-slate-100">
+                {paquetesEntregados.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="p-10 text-center">
+                      <div className="text-slate-400 font-bold italic text-lg">Aún no hay registro de entregas.</div>
+                    </td>
+                  </tr>
+                ) : (
+                  paquetesEntregados.map(paquete => (
+                    <tr key={paquete.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 font-black text-indigo-700 text-lg">Apto {paquete.inmueble}</td>
+                      <td className="p-4">
+                        <span className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-lg text-xs font-bold">{paquete.tipo_registro}</span>
+                      </td>
+                      <td className="p-4">
+                        <span className="block font-bold text-slate-800">{paquete.nombre_visitante_o_empresa}</span>
+                        <span className="text-xs text-slate-500 block">Guía: {paquete.cedula_o_guia || 'N/A'}</span>
+                      </td>
+                      <td className="p-4 text-xs text-slate-600 font-medium">
+                        {paquete.fecha_entrega ? new Date(paquete.fecha_entrega).toLocaleString() : 'N/A'}
+                      </td>
+                      <td className="p-4 text-center">
+                        <button 
+                          onClick={() => setPaqueteDetalle(paquete)} 
+                          className="bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-200 transition-colors shadow-sm w-full md:w-auto"
+                        >
+                          👁️ Ver Fotos
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 🔥 NUEVO MODAL: "VER DETALLE" (Para Pendientes e Historial) 🔥 */}
+      {/* ============================================================== */}
+      {paqueteDetalle && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 relative flex flex-col">
+            
+            {/* Botón de cerrar Modal */}
+            <button 
+              onClick={() => setPaqueteDetalle(null)} 
+              className="absolute top-3 right-3 bg-black/50 text-white w-8 h-8 flex items-center justify-center rounded-full z-10 hover:bg-black/80 transition-colors font-black"
+            >
+              X
+            </button>
+            
+            {/* SI ESTÁ PENDIENTE (Muestra 1 foto y el botón verde de entregar) */}
+            {paqueteDetalle.estado !== 'Entregado' ? (
+              <>
+                <div className="h-56 bg-slate-100 relative">
+                  {paqueteDetalle.foto_url ? (
+                    <img src={paqueteDetalle.foto_url} alt="Paquete" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-5xl">📦</div>
+                  )}
+                </div>
+                <div className="p-6 flex flex-col">
+                  <div className="flex justify-between items-start mb-3">
+                    <span className="bg-amber-100 text-amber-800 text-xs font-black uppercase px-3 py-1 rounded-lg">Apto {paqueteDetalle.inmueble}</span>
+                    <span className="text-xs text-slate-400 font-bold">{paqueteDetalle.fecha_ingreso ? new Date(paqueteDetalle.fecha_ingreso).toLocaleDateString() : 'Sin fecha'}</span>
                   </div>
-                  <div className="p-4 flex-1 flex flex-col">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase px-2 py-1 rounded">Apto {paquete.inmueble}</span>
-                      <span className="text-[10px] text-slate-400">Entregado el {paquete.fecha_entrega ? new Date(paquete.fecha_entrega).toLocaleDateString() : 'N/A'}</span>
+                  <h3 className="font-black text-slate-800 text-2xl">{paqueteDetalle.nombre_visitante_o_empresa}</h3>
+                  <p className="text-sm text-slate-500 mb-3">Guía: <span className="font-bold text-slate-700">{paqueteDetalle.cedula_o_guia || 'N/A'}</span></p>
+                  
+                  {paqueteDetalle.observaciones && (
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mb-4">
+                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Observaciones</p>
+                      <p className="text-sm text-slate-700">{paqueteDetalle.observaciones}</p>
                     </div>
-                    <h3 className="font-bold text-slate-700">{paquete.nombre_visitante_o_empresa}</h3>
-                    <p className="text-xs text-slate-500 mb-1">Guía: {paquete.cedula_o_guia || 'N/A'}</p>
+                  )}
+                  
+                  {/* Este botón abre el modal de la cámara y cierra el modal de detalle */}
+                  <button 
+                    onClick={() => { setPaqueteAEntregar(paqueteDetalle); setPaqueteDetalle(null); }} 
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black text-lg py-4 mt-2 rounded-xl transition shadow-lg"
+                  >
+                    📸 Tomar Foto y Entregar
+                  </button>
+                </div>
+              </>
+            ) : (
+              // SI ESTÁ ENTREGADO (Muestra las 2 fotos comparativas)
+              <>
+                <div className="h-48 flex relative bg-slate-200">
+                  <div className="w-1/2 h-full border-r border-slate-300 relative">
+                    {paqueteDetalle.foto_url ? <img src={paqueteDetalle.foto_url} alt="Llegada" className="w-full h-full object-cover grayscale" /> : <span className="flex h-full items-center justify-center text-xs text-slate-400">Sin foto</span>}
+                    <span className="absolute bottom-2 left-2 bg-black/70 text-white text-xs font-bold px-2 py-1 rounded">Llegada</span>
+                  </div>
+                  <div className="w-1/2 h-full relative">
+                    {paqueteDetalle.foto_entrega ? <img src={paqueteDetalle.foto_entrega} alt="Entrega" className="w-full h-full object-cover" /> : <span className="flex h-full items-center justify-center text-xs text-slate-400">Sin foto</span>}
+                    <span className="absolute bottom-2 left-2 bg-emerald-500/90 text-white text-xs font-bold px-2 py-1 rounded">Quien Recibió</span>
                   </div>
                 </div>
-              ))
+                <div className="p-6 flex flex-col">
+                  <div className="flex justify-between items-start mb-3">
+                    <span className="bg-indigo-100 text-indigo-800 text-xs font-black uppercase px-3 py-1 rounded-lg">Apto {paqueteDetalle.inmueble}</span>
+                    <span className="text-xs text-emerald-600 font-bold">Entregado: {paqueteDetalle.fecha_entrega ? new Date(paqueteDetalle.fecha_entrega).toLocaleDateString() : 'N/A'}</span>
+                  </div>
+                  <h3 className="font-black text-slate-800 text-2xl">{paqueteDetalle.nombre_visitante_o_empresa}</h3>
+                  <p className="text-sm text-slate-500 mb-3">Guía: <span className="font-bold text-slate-700">{paqueteDetalle.cedula_o_guia || 'N/A'}</span></p>
+                  
+                  {paqueteDetalle.observaciones && (
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Observaciones</p>
+                      <p className="text-sm text-slate-700">{paqueteDetalle.observaciones}</p>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
       )}
 
-      {/* MODAL DE CÁMARA PARA ENTREGAS */}
+      {/* ============================================================== */}
+      {/* 🔥 MODAL DE CÁMARA PARA CONFIRMAR LA ENTREGA 🔥              */}
+      {/* ============================================================== */}
       {paqueteAEntregar && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex justify-center items-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
