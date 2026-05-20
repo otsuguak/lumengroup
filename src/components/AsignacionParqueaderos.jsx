@@ -14,7 +14,10 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
   const [filtroDropdown, setFiltroDropdown] = useState('');
   const [dropdownAbierto, setDropdownAbierto] = useState(false);
 
-  // 🔥 NUEVO: Estados para MODO EDICIÓN 🔥
+  // 🔥 ESTADOS PARA EL VISOR DE DOCUMENTOS (IFRAME) 🔥
+  const [documentoIframe, setDocumentoIframe] = useState(null);
+
+  // Estados para MODO EDICIÓN
   const [modoEdicion, setModoEdicion] = useState(false);
   const [idEdicion, setIdEdicion] = useState(null);
   const [urlsExistentes, setUrlsExistentes] = useState({ tarjeta: null, soat: null, tecno: null });
@@ -97,7 +100,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     return publicUrlData.publicUrl;
   };
 
-  // 🔥 NUEVO: Función para resetear el formulario 🔥
   const limpiarFormulario = () => {
     setModoEdicion(false);
     setIdEdicion(null);
@@ -111,12 +113,11 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     setDocSoat(null);
     setDocTecno(null);
     
-    document.getElementById('input-tarjeta').value = '';
-    document.getElementById('input-soat').value = '';
-    document.getElementById('input-tecno').value = '';
+    if(document.getElementById('input-tarjeta')) document.getElementById('input-tarjeta').value = '';
+    if(document.getElementById('input-soat')) document.getElementById('input-soat').value = '';
+    if(document.getElementById('input-tecno')) document.getElementById('input-tecno').value = '';
   };
 
-  // 🔥 NUEVO: Función para preparar la edición 🔥
   const editarAsignacion = (asig) => {
     setModoEdicion(true);
     setIdEdicion(asig.id);
@@ -139,15 +140,13 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
       tecno: asig.doc_tecnomecanica
     });
 
-    // Subir suavemente al inicio de la página para que el admin vea el formulario
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 🔥 NUEVO: Función para borrar registro 🔥
   const eliminarAsignacion = async (id, placaVehiculo) => {
     const { isConfirmed } = await Swal.fire({
       title: '¿Eliminar registro?',
-      text: `Estás a punto de borrar la placa ${placaVehiculo}. Esta acción no se puede deshacer.`,
+      text: `Estás a punto de borrar la asignación de la placa ${placaVehiculo}. Esta acción no se puede deshacer.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#ef4444',
@@ -163,7 +162,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
       } else {
         Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Borrado correctamente', showConfirmButton: false, timer: 1500 });
         cargarAsignaciones();
-        if (modoEdicion && idEdicion === id) limpiarFormulario(); // Si estaba editando el que borró, limpia
+        if (modoEdicion && idEdicion === id) limpiarFormulario(); 
       }
     }
   };
@@ -176,7 +175,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
 
     setCargando(true);
     try {
-      // Si estamos editando y NO subió archivo nuevo, conservamos la URL vieja
       const urlTarjeta = docTarjeta ? await subirArchivo(docTarjeta, 'tarjeta') : (modoEdicion ? urlsExistentes.tarjeta : null);
       const urlSoat = docSoat ? await subirArchivo(docSoat, 'soat') : (modoEdicion ? urlsExistentes.soat : null);
       const urlTecno = docTecno ? await subirArchivo(docTecno, 'tecno') : (modoEdicion ? urlsExistentes.tecno : null);
@@ -195,12 +193,10 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
       };
 
       if (modoEdicion) {
-        // ACTUALIZAR REGISTRO
         const { error } = await supabase.from('parqueaderos_asignados').update(payload).eq('id', idEdicion);
         if (error) throw error;
         Swal.fire('¡Actualizado!', 'El registro fue modificado con éxito.', 'success');
       } else {
-        // CREAR NUEVO REGISTRO
         const { error } = await supabase.from('parqueaderos_asignados').insert([payload]);
         if (error) throw error;
         Swal.fire('¡Éxito!', 'Parqueadero asignado y documentos guardados.', 'success');
@@ -314,50 +310,42 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
         </div>
 
         <div className="flex items-center justify-between mb-4 border-b pb-2">
-          <h3 className="font-bold text-slate-700">Carga de Documentos Legales <span className="text-xs font-normal text-slate-400">{modoEdicion && '(Deja vacío para conservar los actuales)'}</span></h3>
-          <span className="bg-blue-100 text-blue-700 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full animate-pulse shadow-sm border border-blue-200">
-            💡 TIP: Doble clic en los cuadros para cargar archivo
-          </span>
+          <h3 className="font-bold text-slate-700">Carga de Documentos <span className="text-xs font-normal text-slate-400">{modoEdicion && '(Deja vacío para conservar actuales)'}</span></h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 relative z-0">
-          <div className="bg-white p-3 rounded border border-slate-200 hover:border-blue-400 transition-colors cursor-pointer shadow-sm">
-            <label className="text-xs font-black text-[#00A6FB] block mb-2 cursor-pointer uppercase tracking-wider">📄 Tarjeta de Propiedad</label>
-            <input id="input-tarjeta" type="file" accept=".pdf,image/*" onChange={(e) => setDocTarjeta(e.target.files[0])} className="text-xs w-full cursor-pointer text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+          <div className="bg-white p-3 rounded border border-slate-200 hover:border-blue-400 transition-colors shadow-sm">
+            <label className="text-xs font-black text-[#00A6FB] block mb-2 uppercase">📄 Tarjeta de Propiedad</label>
+            <input id="input-tarjeta" type="file" accept=".pdf,image/*" onChange={(e) => setDocTarjeta(e.target.files[0])} className="text-xs w-full text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
             {modoEdicion && urlsExistentes.tarjeta && !docTarjeta && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento ya subido</p>}
           </div>
-          <div className="bg-white p-3 rounded border border-slate-200 hover:border-emerald-400 transition-colors cursor-pointer shadow-sm">
-            <label className="text-xs font-black text-emerald-600 block mb-2 cursor-pointer uppercase tracking-wider">🛡️ SOAT Vigente</label>
-            <input id="input-soat" type="file" accept=".pdf,image/*" onChange={(e) => setDocSoat(e.target.files[0])} className="text-xs w-full cursor-pointer text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100" />
+          <div className="bg-white p-3 rounded border border-slate-200 hover:border-emerald-400 transition-colors shadow-sm">
+            <label className="text-xs font-black text-emerald-600 block mb-2 uppercase">🛡️ SOAT Vigente</label>
+            <input id="input-soat" type="file" accept=".pdf,image/*" onChange={(e) => setDocSoat(e.target.files[0])} className="text-xs w-full text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100" />
             {modoEdicion && urlsExistentes.soat && !docSoat && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento ya subido</p>}
           </div>
-          <div className="bg-white p-3 rounded border border-slate-200 hover:border-amber-400 transition-colors cursor-pointer shadow-sm">
-            <label className="text-xs font-black text-amber-600 block mb-2 cursor-pointer uppercase tracking-wider">🔧 Tecnomecánica</label>
-            <input id="input-tecno" type="file" accept=".pdf,image/*" onChange={(e) => setDocTecno(e.target.files[0])} className="text-xs w-full cursor-pointer text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100" />
+          <div className="bg-white p-3 rounded border border-slate-200 hover:border-amber-400 transition-colors shadow-sm">
+            <label className="text-xs font-black text-amber-600 block mb-2 uppercase">🔧 Tecnomecánica</label>
+            <input id="input-tecno" type="file" accept=".pdf,image/*" onChange={(e) => setDocTecno(e.target.files[0])} className="text-xs w-full text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100" />
             {modoEdicion && urlsExistentes.tecno && !docTecno && <p className="text-[10px] text-emerald-600 mt-2 font-bold">✓ Documento ya subido</p>}
           </div>
         </div>
 
-        {/* 🔥 BOTONES DE ACCIÓN DINÁMICOS 🔥 */}
         <div className="flex gap-4">
-          <button type="submit" disabled={cargando} className={`flex-1 text-white font-black uppercase tracking-widest py-3.5 rounded-xl transition-transform hover:scale-[1.01] disabled:opacity-50 shadow-lg hover:shadow-xl ${modoEdicion ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#00A6FB] hover:bg-blue-600'}`}>
+          <button type="submit" disabled={cargando} className={`flex-1 text-white font-black uppercase tracking-widest py-3.5 rounded-xl transition-transform hover:scale-[1.01] shadow-lg ${modoEdicion ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#00A6FB] hover:bg-blue-600'}`}>
             {cargando ? 'Guardando...' : (modoEdicion ? 'Actualizar Asignación' : 'Guardar Asignación')}
           </button>
           
           {modoEdicion && (
-            <button type="button" onClick={limpiarFormulario} disabled={cargando} className="w-1/3 bg-slate-300 text-slate-700 font-black uppercase tracking-widest py-3.5 rounded-xl hover:bg-slate-400 transition-colors shadow-sm">
+            <button type="button" onClick={limpiarFormulario} disabled={cargando} className="w-1/3 bg-slate-300 text-slate-700 font-black uppercase py-3.5 rounded-xl hover:bg-slate-400 shadow-sm">
               Cancelar
             </button>
           )}
         </div>
       </form>
 
-      {/* ============================================================== */}
-      {/* TABLA DE ASIGNACIONES CON BUSCADOR DE LA TABLA                 */}
-      {/* ============================================================== */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
         <h3 className="font-bold text-slate-800 text-lg">Registro Operativo de Parqueaderos</h3>
-        
         <div className="relative w-full md:w-72">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔍</span>
           <input 
@@ -365,7 +353,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
             placeholder="Buscar inmueble o placa..." 
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            className="w-full pl-10 p-2 rounded-xl border border-slate-300 focus:border-[#00A6FB] focus:ring-1 focus:ring-[#00A6FB] outline-none transition-all shadow-sm"
+            className="w-full pl-10 p-2 rounded-xl border border-slate-300 focus:border-[#00A6FB] outline-none"
           />
         </div>
       </div>
@@ -378,7 +366,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
               <th className="p-4 font-bold">Placa</th>
               <th className="p-4 font-bold">Puesto</th>
               <th className="p-4 font-bold text-center">Documentos</th>
-              <th className="p-4 font-bold text-center">Acciones</th> {/* NUEVA COLUMNA */}
+              <th className="p-4 font-bold text-center">Acciones</th> 
             </tr>
           </thead>
           <tbody className="divide-y border-slate-100">
@@ -393,37 +381,30 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
                   <span className="bg-slate-200 px-3 py-1 rounded-lg text-xs font-black mr-2 text-slate-700">{asig.numero_parqueadero}</span>
                   <span className="text-xs text-slate-500 hidden md:inline-block">{asig.tipo_vehiculo}</span>
                 </td>
+                
+                {/* 🔥 BOTONES PARA ABRIR EL IFRAME 🔥 */}
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-2">
                     {asig.doc_tarjeta_propiedad ? (
-                      <a href={asig.doc_tarjeta_propiedad} target="_blank" rel="noreferrer" className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-200 transition-colors shadow-sm">Tarjeta</a>
+                      <button onClick={() => setDocumentoIframe(asig.doc_tarjeta_propiedad)} className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-200 transition-colors shadow-sm">Tarjeta</button>
                     ) : <span className="text-xs text-slate-300">N/A</span>}
                     
                     {asig.doc_soat ? (
-                      <a href={asig.doc_soat} target="_blank" rel="noreferrer" className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-200 transition-colors shadow-sm">SOAT</a>
+                      <button onClick={() => setDocumentoIframe(asig.doc_soat)} className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-200 transition-colors shadow-sm">SOAT</button>
                     ) : <span className="text-xs text-slate-300">N/A</span>}
                     
                     {asig.doc_tecnomecanica ? (
-                      <a href={asig.doc_tecnomecanica} target="_blank" rel="noreferrer" className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-amber-200 transition-colors shadow-sm">Tecno</a>
+                      <button onClick={() => setDocumentoIframe(asig.doc_tecnomecanica)} className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-amber-200 transition-colors shadow-sm">Tecno</button>
                     ) : <span className="text-xs text-slate-300">N/A</span>}
                   </div>
                 </td>
                 
-                {/* 🔥 NUEVOS BOTONES DE ACCIÓN 🔥 */}
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-2">
-                    <button 
-                      onClick={() => editarAsignacion(asig)} 
-                      className="p-2 bg-amber-100 text-amber-600 rounded-lg hover:bg-amber-200 transition-colors shadow-sm" 
-                      title="Editar Asignación"
-                    >
+                    <button onClick={() => editarAsignacion(asig)} className="p-2 bg-amber-100 text-amber-600 rounded-lg hover:bg-amber-200 shadow-sm" title="Editar Asignación">
                       ✏️
                     </button>
-                    <button 
-                      onClick={() => eliminarAsignacion(asig.id, asig.placa)} 
-                      className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors shadow-sm" 
-                      title="Eliminar Asignación"
-                    >
+                    <button onClick={() => eliminarAsignacion(asig.id, asig.placa)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 shadow-sm" title="Eliminar Asignación">
                       🗑️
                     </button>
                   </div>
@@ -444,6 +425,51 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
           </tbody>
         </table>
       </div>
+
+      {/* ============================================================== */}
+      {/* 🔥 MODAL IFRAME PARA VER DOCUMENTOS (MAGIA PURA) 🔥            */}
+      {/* ============================================================== */}
+      {documentoIframe && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-4xl h-[85vh] rounded-2xl flex flex-col overflow-hidden shadow-2xl relative animate-fade-in-up">
+            
+            <div className="bg-slate-900 p-4 flex justify-between items-center shadow-md z-10">
+              <h3 className="text-white font-bold tracking-wide flex items-center gap-2">
+                <span>📄</span> Visor de Documento
+              </h3>
+              <button 
+                onClick={() => setDocumentoIframe(null)} 
+                className="bg-red-500 text-white w-8 h-8 rounded-full font-black hover:bg-red-600 transition-colors flex items-center justify-center"
+                title="Cerrar visor"
+              >
+                X
+              </button>
+            </div>
+            
+            <div className="flex-1 w-full h-full bg-slate-100 relative">
+              <iframe 
+                src={documentoIframe} 
+                className="w-full h-full border-0"
+                title="Documento Vehículo"
+              />
+            </div>
+            
+            <div className="bg-slate-50 p-3 border-t border-slate-200 text-center z-10">
+              <p className="text-xs text-slate-500 mb-1">Si el documento no se visualiza correctamente por bloqueos del navegador:</p>
+              <a 
+                href={documentoIframe} 
+                target="_blank" 
+                rel="noreferrer" 
+                className="text-sm font-black text-[#00A6FB] hover:underline"
+              >
+                🔗 Clic aquí para abrir el archivo en una pestaña nueva
+              </a>
+            </div>
+            
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
