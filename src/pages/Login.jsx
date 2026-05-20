@@ -250,10 +250,15 @@ export default function Login() {
         throw error;
       }
 
-      Swal.fire('¡Éxito!', 'Usuario creado correctamente. Ya puedes ingresar.', 'success');
-      setVista('login'); 
-      setPassword(''); 
-      setCodigo('');
+      // 🔥 AQUÍ ESTÁ LA MAGIA QUE ME PEDISTE 🔥
+      // Esperamos a que el usuario le de clic en "OK" y luego recargamos la página entera.
+      await Swal.fire('¡Éxito!', 'Usuario creado correctamente. Ya puedes ingresar.', 'success');
+      
+      // Limpiamos cualquier rastro de la sesión recién creada en segundo plano
+      await supabase.auth.signOut();
+      
+      // Recargamos la página para dejarla limpia como recién abierta
+      window.location.reload(); 
       
     } catch (error) {
       console.error("Error capturado en Registro:", error);
