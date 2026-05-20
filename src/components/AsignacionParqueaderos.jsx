@@ -79,7 +79,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     setDropdownAbierto(false); 
   };
 
-  // 🔥 MEJORA 1: Especificar el contentType para que el Iframe lo pueda leer 🔥
+  // 🔥 MEJORA DE SEGURIDAD: Ya no fallará en silencio 🔥
   const subirArchivo = async (archivo, tipoDoc) => {
     if (!archivo) return null;
     const fileExt = archivo.name.split('.').pop();
@@ -90,12 +90,13 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
       .upload(fileName, archivo, {
         cacheControl: '3600',
         upsert: false,
-        contentType: archivo.type // Esto le dice al navegador "Soy un PDF" o "Soy una imagen"
+        contentType: archivo.type 
       });
 
+    // Si hay error al subir, lanzamos una excepción para detener todo y avisarte
     if (error) {
       console.error(`Error subiendo ${tipoDoc}:`, error);
-      return null;
+      throw new Error(`No se pudo subir el archivo de ${tipoDoc}. Asegúrate de que el bucket "documentos_vehiculos" exista en Supabase y tenga permisos. Detalle: ${error.message}`);
     }
     
     const { data: publicUrlData } = supabase.storage
@@ -148,7 +149,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 🔥 MEJORA 2: Borrar los archivos del Storage para no dejar basura 🔥
   const eliminarAsignacion = async (asig) => {
     const { isConfirmed } = await Swal.fire({
       title: '¿Eliminar registro?',
@@ -162,17 +162,14 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     });
 
     if (isConfirmed) {
-      // 1. Borrar de la base de datos primero
       const { error } = await supabase.from('parqueaderos_asignados').delete().eq('id', asig.id);
       
       if (error) {
         Swal.fire('Error', 'No se pudo eliminar el registro.', 'error');
       } else {
-        // 2. Si se borró de la BD, buscamos los archivos en el Storage y los destruimos
         const urls = [asig.doc_tarjeta_propiedad, asig.doc_soat, asig.doc_tecnomecanica].filter(Boolean);
         
         if (urls.length > 0) {
-          // Extraemos solo el nombre del archivo al final de la URL
           const filesToDelete = urls.map(url => decodeURIComponent(url.split('/').pop()));
           const { error: errStorage } = await supabase.storage.from('documentos_vehiculos').remove(filesToDelete);
           if (errStorage) console.error("Error limpiando basura:", errStorage);
@@ -193,6 +190,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
 
     setCargando(true);
     try {
+      // Si esto falla ahora, saltará directamente al Catch mostrando el error real
       const urlTarjeta = docTarjeta ? await subirArchivo(docTarjeta, 'tarjeta') : (modoEdicion ? urlsExistentes.tarjeta : null);
       const urlSoat = docSoat ? await subirArchivo(docSoat, 'soat') : (modoEdicion ? urlsExistentes.soat : null);
       const urlTecno = docTecno ? await subirArchivo(docTecno, 'tecno') : (modoEdicion ? urlsExistentes.tecno : null);
@@ -211,11 +209,9 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
       };
 
       if (modoEdicion) {
-        // ACTUALIZAR BD
         const { error } = await supabase.from('parqueaderos_asignados').update(payload).eq('id', idEdicion);
         if (error) throw error;
         
-        // 🔥 MEJORA 3: Limpiar basura si reemplazaron un archivo viejo 🔥
         let archivosReemplazados = [];
         if (docTarjeta && urlsExistentes.tarjeta) archivosReemplazados.push(decodeURIComponent(urlsExistentes.tarjeta.split('/').pop()));
         if (docSoat && urlsExistentes.soat) archivosReemplazados.push(decodeURIComponent(urlsExistentes.soat.split('/').pop()));
@@ -227,7 +223,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
 
         Swal.fire('¡Actualizado!', 'El registro fue modificado con éxito.', 'success');
       } else {
-        // CREAR NUEVO
         const { error } = await supabase.from('parqueaderos_asignados').insert([payload]);
         if (error) throw error;
         Swal.fire('¡Éxito!', 'Parqueadero asignado y documentos guardados.', 'success');
@@ -236,7 +231,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
       limpiarFormulario();
       cargarAsignaciones(); 
     } catch (error) {
-      Swal.fire('Error', error.message, 'error');
+      Swal.fire('Error de Carga', error.message, 'error');
     } finally {
       setCargando(false);
     }
@@ -430,7 +425,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
                   </div>
                 </td>
                 
-                {/* Ojo aquí: ahora le pasamos el objeto COMPLETO (asig) para poder sacar los nombres de los archivos */}
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-2">
                     <button onClick={() => editarAsignacion(asig)} className="p-2 bg-amber-100 text-amber-600 rounded-lg hover:bg-amber-200 shadow-sm" title="Editar Asignación">
