@@ -389,4 +389,4 @@ export default function ModuloParqueadero({ turno }) {
       </div>
     </div>
   );
-}
+} 
