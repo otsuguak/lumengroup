@@ -558,4 +558,4 @@ export default function ModuloRecepcion({ turno }) {
       )}
     </div>
   );
-} 
+}

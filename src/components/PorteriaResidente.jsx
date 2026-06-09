@@ -170,11 +170,13 @@ export default function PorteriaResidente() {
                     <th className="py-4 px-6 font-bold border-b border-slate-100">Visitante</th>
                     <th className="py-4 px-6 font-bold border-b border-slate-100">Ingreso</th>
                     <th className="py-4 px-6 font-bold border-b border-slate-100">Salida</th>
+                    {/* NUEVA COLUMNA DE VALOR */}
+                    <th className="py-4 px-6 font-bold border-b border-slate-100 text-right">Valor Pagado</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm text-slate-600 divide-y divide-slate-100">
                   {registrosParqueadero.length === 0 && (
-                    <tr><td colSpan="4" className="p-10 text-center italic text-slate-400">No hay vehículos registrados para tu apto.</td></tr>
+                    <tr><td colSpan="5" className="p-10 text-center italic text-slate-400">No hay vehículos registrados para tu apto.</td></tr>
                   )}
                   {registrosParqueadero.map(carro => (
                     <tr key={carro.id} className="hover:bg-slate-50 transition-colors">
@@ -184,7 +186,6 @@ export default function PorteriaResidente() {
                             {carro.tipo_vehiculo === 'Carro' ? '🚙' : '🏍️'}
                           </div>
                           <div>
-                            {/* AQUÍ ESTÁ LA PLACA SÚPER DESTACADA */}
                             <span className="font-black text-slate-800 text-lg block tracking-widest uppercase">{carro.placa}</span>
                             <span className="text-[10px] uppercase font-bold text-slate-400">{carro.tipo_vehiculo}</span>
                           </div>
@@ -207,13 +208,26 @@ export default function PorteriaResidente() {
                           </span>
                         )}
                       </td>
+                      {/* CELDA DEL VALOR COBRADO */}
+                      <td className="py-4 px-6 text-right">
+                        {carro.hora_salida ? (
+                          carro.total_pagado > 0 ? (
+                            <span className="font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg">
+                              ${Number(carro.total_pagado).toLocaleString('es-CO')}
+                            </span>
+                          ) : (
+                            <span className="font-bold text-slate-400">Gratis / $0</span>
+                          )
+                        ) : (
+                          <span className="text-slate-400 text-xs italic">En curso...</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-
           {/* 🚶‍♂️ PEATONALES */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-6 border-b border-slate-100 bg-slate-50">
