@@ -208,12 +208,12 @@ export default function PorteriaResidente() {
                           </span>
                         )}
                       </td>
-                      {/* CELDA DEL VALOR COBRADO */}
+                       {/* CELDA DEL VALOR COBRADO */}
                       <td className="py-4 px-6 text-right">
                         {carro.hora_salida ? (
-                          carro.total_pagado > 0 ? (
+                          carro.valor_total > 0 ? (
                             <span className="font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg">
-                              ${Number(carro.total_pagado).toLocaleString('es-CO')}
+                              ${Number(carro.valor_total).toLocaleString('es-CO')}
                             </span>
                           ) : (
                             <span className="font-bold text-slate-400">Gratis / $0</span>
@@ -221,7 +221,7 @@ export default function PorteriaResidente() {
                         ) : (
                           <span className="text-slate-400 text-xs italic">En curso...</span>
                         )}
-                      </td>
+                      </td> 
                     </tr>
                   ))}
                 </tbody>
