@@ -35,7 +35,6 @@ export default function Login() {
   });
 
   useEffect(() => {
-    // 🔥 AJUSTE 1: Listener de Supabase para detectar cuando vuelven del correo
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setVista('restablecer');
@@ -44,12 +43,10 @@ export default function Login() {
 
     iniciarMotorSaaS();
 
-    // Limpiar suscripción al desmontar
     return () => subscription.unsubscribe();
   }, []);
 
   const iniciarMotorSaaS = async () => {
-    // Check manual por si el listener tarda
     if (window.location.hash.includes('type=recovery')) {
       setVista('restablecer'); 
       return;
@@ -108,7 +105,9 @@ export default function Login() {
     if (!email || !password) return Swal.fire('Atención', 'Ingresa correo y contraseña', 'warning');
     setCargando(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      // 🔥 AJUSTE BUG: Limpiamos espacios en blanco accidentales del correo
+      const emailLimpio = email.trim();
+      const { data, error } = await supabase.auth.signInWithPassword({ email: emailLimpio, password });
       if (error) throw error;
       
       if (data.user) {
@@ -150,6 +149,7 @@ export default function Login() {
           });
 
           if (formValues) {
+            // 🔥 AQUÍ OCURRE LA MAGIA MULTI-TENANT 🔥
             const { error: errorInsert } = await supabase.from('usuarios').insert({
               id: data.user.id,
               email: data.user.email,
@@ -162,7 +162,7 @@ export default function Login() {
             });
 
             if (errorInsert) throw errorInsert;
-            Swal.fire('¡Éxito!', 'Inmueble registrado. Ingresando...', 'success');
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Cuenta vinculada exitosamente', showConfirmButton: false, timer: 3000});
             rolFinal = 'usuario';
           } else {
             await supabase.auth.signOut();
@@ -218,8 +218,11 @@ export default function Login() {
         }
       }
 
+      // 🔥 AJUSTE BUG: Limpiamos correo antes de enviarlo
+      const emailLimpio = email.trim();
+      
       const { error } = await supabase.auth.signUp({ 
-        email, 
+        email: emailLimpio, 
         password, 
         options: { 
           data: { 
@@ -241,7 +244,7 @@ export default function Login() {
           setCargando(false);
           return Swal.fire({
             title: '¡Ya estás en la red!',
-            text: 'Tu correo ya existe en otro conjunto de nuestra red. Por favor, ve a "Iniciar Sesión" con tu contraseña original y el sistema te permitirá vincularte a este nuevo conjunto.',
+            text: 'Tu correo ya existe en otro conjunto de nuestra red. Ve a "Iniciar Sesión" con tu contraseña original y el sistema te permitirá vincularte a este nuevo conjunto.',
             icon: 'info',
             confirmButtonText: 'Ir a Login',
             confirmButtonColor: config.color1
@@ -250,15 +253,14 @@ export default function Login() {
         throw error;
       }
 
-      // 🔥 AQUÍ ESTÁ LA MAGIA QUE ME PEDISTE 🔥
-      // Esperamos a que el usuario le de clic en "OK" y luego recargamos la página entera.
+      // 🔥 AJUSTE BUG SESIONES: Cierre seguro y sin Reload abrupto
+      await supabase.auth.signOut();
       await Swal.fire('¡Éxito!', 'Usuario creado correctamente. Ya puedes ingresar.', 'success');
       
-      // Limpiamos cualquier rastro de la sesión recién creada en segundo plano
-      await supabase.auth.signOut();
-      
-      // Recargamos la página para dejarla limpia como recién abierta
-      window.location.reload(); 
+      // Limpiamos campos y cambiamos a vista login suavemente
+      setEmail('');
+      setPassword('');
+      setVista('login');
       
     } catch (error) {
       console.error("Error capturado en Registro:", error);
@@ -274,14 +276,13 @@ export default function Login() {
     } finally { setCargando(false); }
   }; 
 
-  // 🔥 AJUSTE 2: Función de recuperación mejorada
   const solicitarRecuperacion = async (e) => {
     e.preventDefault();
     if(!email) return Swal.fire('Atención', 'Por favor ingresa tu correo electrónico.', 'warning');
     setCargando(true);
     try {
-      // Importante: El redirectTo debe coincidir con lo que pongas en Supabase
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { 
+      const emailLimpio = email.trim();
+      const { error } = await supabase.auth.resetPasswordForEmail(emailLimpio, { 
         redirectTo: `${window.location.origin}/login` 
       });
       if (error) throw error;
@@ -302,7 +303,6 @@ export default function Login() {
       
       Swal.fire('¡Éxito!', 'Tu nueva contraseña ha sido guardada.', 'success');
       
-      // Limpiamos la URL y cerramos sesión para que entre limpio
       window.history.replaceState(null, null, window.location.pathname);
       await supabase.auth.signOut();
       setVista('login'); 
