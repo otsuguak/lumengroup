@@ -98,7 +98,7 @@ export default function CrmAdmin() {
           fqr: data.mod_fqr,                      // 12. Centro de Ayuda (FAQ Rediseñado)
           exportar: data.mod_exportar,           // 13. Exportar datos (futuro módulo de análisis avanzado)  
           escalar: data.mod_escalar,             // 14. Escalar a soporte humano (futuro botón de emergencia para casos críticos)
-          correo: clienteSaaS.mod_correo,       //15. Módulo de correos inteligentes (futuro módulo de notificaciones avanzadas)
+          correo: data.mod_correo,       //15. Módulo de correos inteligentes (futuro módulo de notificaciones avanzadas)
           
           // 🔥 NUEVO INTERRUPTOR SAAS PARA PARQUEADEROS 🔥
           parqueadero: data.mod_parqueadero       
