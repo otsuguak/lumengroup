@@ -447,7 +447,7 @@ export default function CrmAdmin() {
           {menuActivo === 'faq' && <PreguntasFrecuentesAdmin />}
           {permisos.fqr && menuActivo === 'fqr' && <FqrAdmin />}
           {menuActivo === 'portada' && <ConfiguracionAdmin permisos={permisos} />}
-          {menuActivo === 'correo' && (<ConfiguracionNotificaciones copropiedadId={cliente.copropiedad_id || config?.copropiedad_id} />)}
+          {menuActivo === 'correo' && <ConfiguracionNotificaciones copropiedadId={sessionStorage.getItem('copropiedad_id')} />}
 
           {/* Módulos Core siempre activos si son seleccionados */}
           {menuActivo === 'disenoLogin' && <DisenoLoginAdmin />}
