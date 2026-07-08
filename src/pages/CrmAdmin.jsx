@@ -23,7 +23,7 @@ import ZonasComunesAdmin from '../components/ZonasComunesAdmin';
 import PreguntasFrecuentesAdmin from '../components/PreguntasFrecuentesAdmin';
 import AdminParqueadero from '../components/AdminParqueadero';
 import AsignacionParqueaderos from '../components/AsignacionParqueaderos'; 
-import ConfiguracionNotificaciones from './ConfiguracionNotificaciones';
+import ConfiguracionNotificaciones from '../components/ConfiguracionNotificaciones';
 
 
 export default function CrmAdmin() {
