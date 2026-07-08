@@ -104,6 +104,12 @@ export default function CrmUsuario() {
   };
 
   const cerrarSesion = async () => {
+
+    // 🔥 AJUSTE: Desconectamos OneSignal
+    window.OneSignalDeferred.push(function(OneSignal) {
+        OneSignal.logout();
+    });
+
     await supabase.auth.signOut();
     sessionStorage.removeItem('copropiedad_id');
     navigate('/login');

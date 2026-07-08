@@ -130,6 +130,12 @@ export default function PqrsStaff() {
       Swal.fire('Gestión Guardada', 'Respuesta enviada al residente y estado actualizado.', 'success');
       setTicketSeleccionado(null);
       
+
+      // 🔥 AQUÍ DISPARAMOS LA NOTIFICACIÓN AL RESIDENTE 🔥
+      // Usamos el ID del usuario que creó el ticket (ticketSeleccionado.usuario_id)
+      enviarNotificacion(ticketSeleccionado.usuario_id, "PQRS Actualizada", `Tu PQRS ${formatearCodigo(ticketSeleccionado.codigo_ticket)} ha sido respondida.`);
+      
+      setTicketSeleccionado(null);
       // 🔥 RECARGAMOS LA TABLA PARA QUE VEA EL CAMBIO DE UNA VEZ 🔥
       await cargarCasosAsignados();
       

@@ -22,7 +22,8 @@ import CanalesPagoAdmin from '../components/CanalesPagoAdmin';
 import ZonasComunesAdmin from '../components/ZonasComunesAdmin';
 import PreguntasFrecuentesAdmin from '../components/PreguntasFrecuentesAdmin';
 import AdminParqueadero from '../components/AdminParqueadero';
-import AsignacionParqueaderos from '../components/AsignacionParqueaderos'; // <-- NUESTRO NUEVO COMPONENTE
+import AsignacionParqueaderos from '../components/AsignacionParqueaderos'; 
+import ConfiguracionNotificaciones from './ConfiguracionNotificaciones';
 
 
 export default function CrmAdmin() {
@@ -97,6 +98,7 @@ export default function CrmAdmin() {
           fqr: data.mod_fqr,                      // 12. Centro de Ayuda (FAQ Rediseñado)
           exportar: data.mod_exportar,           // 13. Exportar datos (futuro módulo de análisis avanzado)  
           escalar: data.mod_escalar,             // 14. Escalar a soporte humano (futuro botón de emergencia para casos críticos)
+          correo: clienteSaaS.mod_correo,       //15. Módulo de correos inteligentes (futuro módulo de notificaciones avanzadas)
           
           // 🔥 NUEVO INTERRUPTOR SAAS PARA PARQUEADEROS 🔥
           parqueadero: data.mod_parqueadero       
@@ -125,6 +127,12 @@ export default function CrmAdmin() {
    * Lógica de Logout: Limpia Supabase y la sesión del navegador
    */
   const cerrarSesion = async () => {
+
+    // 🔥 AJUSTE: Desconectamos OneSignal antes de salir
+    window.OneSignalDeferred.push(function(OneSignal) {
+      OneSignal.logout();
+    });
+
     await supabase.auth.signOut();
     sessionStorage.removeItem('copropiedad_id');
     navigate('/login');
@@ -250,6 +258,17 @@ export default function CrmAdmin() {
             >
               <span className="text-xl">🌐</span>
               <span className="font-bold text-sm tracking-tight">Sala de Juntas VIP</span>
+            </button>
+          )}
+
+          {/* Módulo de Correos (Controlado por mod_correo) */}
+          {permisos.correo && (
+            <button 
+              onClick={() => cambiarMenu('correo')} 
+              className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-300 mt-2 ${menuActivo === 'correo' ? 'bg-[#00A6FB] text-white shadow-xl shadow-blue-500/20' : 'text-slate-400 hover:bg-slate-800/50'}`}
+            >
+              <span className="text-xl">📨</span>
+              <span className="font-bold text-sm tracking-tight">Comunicaciones</span>
             </button>
           )}
 
@@ -428,14 +447,15 @@ export default function CrmAdmin() {
           {menuActivo === 'faq' && <PreguntasFrecuentesAdmin />}
           {permisos.fqr && menuActivo === 'fqr' && <FqrAdmin />}
           {menuActivo === 'portada' && <ConfiguracionAdmin permisos={permisos} />}
-          
+          {menuActivo === 'correo' && (<ConfiguracionNotificaciones copropiedadId={cliente.copropiedad_id || config?.copropiedad_id} />)}
+
           {/* Módulos Core siempre activos si son seleccionados */}
           {menuActivo === 'disenoLogin' && <DisenoLoginAdmin />}
 
           {/* 🔥 LÓGICA DE RENDERIZADO DEL NUEVO MÓDULO DE PARQUEADEROS 🔥 */}
           {permisos.parqueadero && menuActivo === 'asignacionParqueaderos' && <AsignacionParqueaderos copropiedadId={sessionStorage.getItem('copropiedad_id')} />}
           {permisos.parqueadero && menuActivo === 'control' && <AdminParqueadero copropiedadId={sessionStorage.getItem('copropiedad_id')} />}
-
+          
         </div>
       </main>
     </div>

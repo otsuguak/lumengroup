@@ -260,8 +260,27 @@ export default function CRMVigilante() {
   };
 
   const cerrarSesionTotal = async () => {
-    const { isConfirmed } = await Swal.fire({ title: '¿Cerrar Sesión?', text: "Saldrás del sistema.", icon: 'question', showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'Sí, salir 🚪', cancelButtonText: 'Cancelar' });
-    if (isConfirmed) { await supabase.auth.signOut(); sessionStorage.clear(); localStorage.clear(); navigate('/login'); }
+    const { isConfirmed } = await Swal.fire({ 
+      title: '¿Cerrar Sesión?', 
+      text: "Saldrás del sistema.", 
+      icon: 'question', 
+      showCancelButton: true, 
+      confirmButtonColor: '#ef4444', 
+      confirmButtonText: 'Sí, salir 🚪', 
+      cancelButtonText: 'Cancelar' 
+    });
+    if (isConfirmed) { 
+
+      // 🔥 AQUÍ VA EL CANDADO DE SEGURIDAD
+      window.OneSignalDeferred.push(function(OneSignal) {
+      OneSignal.logout();
+    });
+
+      await supabase.auth.signOut(); 
+      sessionStorage.clear(); 
+      localStorage.clear(); 
+      navigate('/login'); 
+    }
   };
 
   const finalizarTurno = async () => {

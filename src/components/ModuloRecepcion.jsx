@@ -115,7 +115,12 @@ export default function ModuloRecepcion({ turno }) {
       if (dbError) throw dbError;
       
       Swal.fire({ title: '¡Registrado!', text: `Se registró correctamente.`, icon: 'success', timer: 2000 });
-
+      
+      // 🔥 AQUÍ DISPARAMOS LA NOTIFICACIÓN 🔥
+      // Primero buscamos al dueño del inmueble y luego disparamos
+      const icono = tipoRegistro === 'Visitante' ? '🚶‍♂️' : '📦';
+      enviarNotificacion(inmueble, "Nueva Notificación", `${icono} Tienes un nuevo ${tipoRegistro} en portería.`);  
+      
       // ==========================================
       // 🚀 AVISO AL CORREO DEL RESIDENTE VÍA RESEND
       // ==========================================

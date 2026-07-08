@@ -31,7 +31,8 @@ export default function Login() {
     color2: '#3b82f6', 
     colorFondo: '#0a0f1c', 
     requiere_codigo: true, 
-    codigo_secreto: ''
+    codigo_secreto: '',
+    permitirRegistro: true // 🔥 NUEVO: Control de módulo de registro
   });
 
   useEffect(() => {
@@ -54,11 +55,19 @@ export default function Login() {
 
     try {
       const dominioActual = window.location.hostname;
-      const { data: cliente } = await supabase.from('clientes_saas').select('copropiedad_id').eq('dominio', dominioActual).maybeSingle();
+      // 🔥 Ajuste: Traemos también mod_registro
+      const { data: cliente } = await supabase
+        .from('clientes_saas')
+        .select('copropiedad_id, mod_registro') 
+        .eq('dominio', dominioActual)
+        .maybeSingle();
       
       let idActual = null;
+      let registroPermitido = true;
+
       if (cliente) {
         idActual = cliente.copropiedad_id;
+        registroPermitido = cliente.mod_registro !== false; // Si es null o true, permite. Solo bloquea si es estrictamente false.
         setCopropiedadId(idActual);
         sessionStorage.setItem('copropiedad_id', idActual);
       }
@@ -76,7 +85,8 @@ export default function Login() {
             color2: confData.login_color_2 || '#3b82f6',
             colorFondo: confData.login_color_fondo || '#0a0f1c',
             requiere_codigo: confData.requiere_codigo ?? true,
-            codigo_secreto: confData.codigo_secreto_registro || ''
+            codigo_secreto: confData.codigo_secreto_registro || '',
+            permitirRegistro: registroPermitido // 🔥 Pasamos el valor al estado
           });
         }
       }
@@ -105,12 +115,17 @@ export default function Login() {
     if (!email || !password) return Swal.fire('Atención', 'Ingresa correo y contraseña', 'warning');
     setCargando(true);
     try {
-      // 🔥 AJUSTE BUG: Limpiamos espacios en blanco accidentales del correo
       const emailLimpio = email.trim();
       const { data, error } = await supabase.auth.signInWithPassword({ email: emailLimpio, password });
       if (error) throw error;
       
       if (data.user) {
+
+        // 🔥 AQUÍ ES EL LUGAR PERFECTO: Justo al entrar en el if
+        window.OneSignalDeferred.push(function(OneSignal) {
+            OneSignal.login(data.user.id);
+        });
+        
         const { data: perfil } = await supabase
           .from('usuarios')
           .select('rol, copropiedad_id')
@@ -149,7 +164,6 @@ export default function Login() {
           });
 
           if (formValues) {
-            // 🔥 AQUÍ OCURRE LA MAGIA MULTI-TENANT 🔥
             const { error: errorInsert } = await supabase.from('usuarios').insert({
               id: data.user.id,
               email: data.user.email,
@@ -185,6 +199,12 @@ export default function Login() {
 
   const registrarUsuario = async (e) => {
     e.preventDefault();
+    
+    // 🔥 CANDADO DE SEGURIDAD: Por si logran abrir el modal a la fuerza
+    if (!config.permitirRegistro) {
+        return Swal.fire('Registro Deshabilitado', 'La administración ha deshabilitado el registro de nuevos usuarios.', 'error');
+    }
+
     if (!email || !password || !nombre || !rol || !inmueble || !celular) return Swal.fire('Campos incompletos', 'Diligencia todos los datos.', 'warning');
     if (!copropiedadId) return Swal.fire('Error SaaS', 'No se detectó la empresa. Revisa la URL.', 'error');
     if (!aceptaHabeas) return Swal.fire('Términos de Ley', 'Debes aceptar la política de Habeas Data para registrarte.', 'warning');
@@ -218,7 +238,6 @@ export default function Login() {
         }
       }
 
-      // 🔥 AJUSTE BUG: Limpiamos correo antes de enviarlo
       const emailLimpio = email.trim();
       
       const { error } = await supabase.auth.signUp({ 
@@ -253,11 +272,9 @@ export default function Login() {
         throw error;
       }
 
-      // 🔥 AJUSTE BUG SESIONES: Cierre seguro y sin Reload abrupto
       await supabase.auth.signOut();
       await Swal.fire('¡Éxito!', 'Usuario creado correctamente. Ya puedes ingresar.', 'success');
       
-      // Limpiamos campos y cambiamos a vista login suavemente
       setEmail('');
       setPassword('');
       setVista('login');
@@ -410,7 +427,10 @@ export default function Login() {
                 {cargando ? 'Iniciando...' : 'Entrar'}
               </button>
               <div className="text-center mt-6 flex flex-col gap-3">
-                <p className="text-white/60 text-sm">¿No tienes cuenta? <button type="button" onClick={() => {setVista('registro'); setEmail(''); setPassword('');}} className="texto-neon font-bold hover:underline">Regístrate</button></p>
+                {/* 🔥 AQUÍ ESTÁ LA MAGIA: Oculta la opción si el admin la apagó */}
+                {config.permitirRegistro && (
+                  <p className="text-white/60 text-sm">¿No tienes cuenta? <button type="button" onClick={() => {setVista('registro'); setEmail(''); setPassword('');}} className="texto-neon font-bold hover:underline">Regístrate</button></p>
+                )}
                 <button type="button" onClick={() => {setVista('recuperar'); setEmail(''); setPassword('');}} className="text-white/40 text-xs hover:text-white transition-colors">¿Olvidaste tu contraseña?</button>
               </div>
             </form>
@@ -474,7 +494,7 @@ export default function Login() {
             </form>
           )}
 
-          {/* 🔥 VISTA 3: RECUPERAR CLAVE (Agregada) */}
+          {/* VISTA 3: RECUPERAR CLAVE */}
           {vista === 'recuperar' && (
             <form onSubmit={solicitarRecuperacion} className="space-y-6 animate-in fade-in duration-300">
               <p className="text-white/70 text-sm">Ingresa tu correo. Te enviaremos un link para restaurar tu contraseña.</p>
@@ -489,7 +509,7 @@ export default function Login() {
             </form>
           )}
 
-          {/* 🔥 VISTA 4: RESTABLECER (Nueva Clave) */}
+          {/* VISTA 4: RESTABLECER (Nueva Clave) */}
           {vista === 'restablecer' && (
             <form onSubmit={actualizarClave} className="space-y-6 animate-in fade-in duration-300">
               <p className="text-white/70 text-sm">Ingresa tu nueva contraseña para acceder.</p>

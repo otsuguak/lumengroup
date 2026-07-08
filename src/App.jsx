@@ -1,7 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from './supabase'; // Asegúrate de que la ruta sea correcta si tu supabase.js está en /src
+import { supabase } from './supabase'; 
 import Swal from 'sweetalert2';
+import OneSignal from 'react-onesignal'; // 🔥 1. IMPORTAMOS ONESIGNAL AQUÍ
 
 import PortalComunitario from './pages/PortalComunitario';
 import CrmAdmin from './pages/CrmAdmin';
@@ -37,18 +38,15 @@ function GuardianInactividad() {
   const reiniciarTemporizador = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     
-    // Si estamos en la página pública o en el login, no hacemos nada
     if (!limiteTiempoRef.current || location.pathname === '/login' || location.pathname === '/') {
       return;
     }
 
-    // Volver a iniciar el conteo
     timerRef.current = setTimeout(() => {
       cerrarSesion();
     }, limiteTiempoRef.current);
   }, [location.pathname, cerrarSesion]);
 
-  // Efecto 1: Saber qué Rol es el usuario cuando entra a sus paneles
   useEffect(() => {
     const verificarRolParaTimeout = async () => {
       if (location.pathname === '/login' || location.pathname === '/') {
@@ -59,11 +57,9 @@ function GuardianInactividad() {
 
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        // Averiguamos el rol para darle el tiempo justo
         const { data: perfil } = await supabase.from('usuarios').select('rol').eq('id', session.user.id).maybeSingle();
         const rolActual = perfil?.rol || session.user.user_metadata?.rol || 'usuario';
         
-        // ⏳ 15 minutos para Staff (Admin/Vigilante) | 60 minutos para Residentes
         const minutosDeGracia = (rolActual === 'agente' || rolActual === 'vigilante') ? 15 : 60;
         limiteTiempoRef.current = minutosDeGracia * 60 * 1000; 
         
@@ -74,20 +70,17 @@ function GuardianInactividad() {
     verificarRolParaTimeout();
   }, [location.pathname, reiniciarTemporizador]);
 
-  // Efecto 2: Escuchar si el usuario mueve el mouse, hace clic o escribe
   useEffect(() => {
-    let bloqueadorDeExceso = false; // Para no sobrecargar el navegador con cada milímetro que muevan el mouse
+    let bloqueadorDeExceso = false; 
 
     const detectarActividad = () => {
       if (!bloqueadorDeExceso) {
         reiniciarTemporizador();
         bloqueadorDeExceso = true;
-        // Solo vuelve a reiniciar el timer cada 2 segundos aunque muevan mucho el mouse
         setTimeout(() => { bloqueadorDeExceso = false; }, 2000); 
       }
     };
 
-    // Eventos que significan que la persona sigue ahí
     const eventos = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
     eventos.forEach(evento => window.addEventListener(evento, detectarActividad));
 
@@ -97,16 +90,47 @@ function GuardianInactividad() {
     };
   }, [reiniciarTemporizador]);
 
-  return null; // Este componente es un escudo silencioso, no pinta nada visual.
+  return null; 
 }
 
 // =======================================================
 // 🚀 APLICACIÓN PRINCIPAL
 // =======================================================
 function App() {
+
+  // 🔥 2. EL MOTOR DE NOTIFICACIONES MULTI-TENANT
+  useEffect(() => {
+    const iniciarNotificaciones = async () => {
+      try {
+        const dominioActual = window.location.hostname;
+        
+        // Vamos a Supabase y preguntamos: "¿Cuál es el código OneSignal para este dominio?"
+        const { data: cliente } = await supabase
+          .from('clientes_saas')
+          .select('onesignal_app_id')
+          .eq('dominio', dominioActual)
+          .maybeSingle();
+
+        // Si el conjunto tiene un código guardado, ¡prendemos las notificaciones!
+        if (cliente && cliente.onesignal_app_id) {
+          await OneSignal.init({
+            appId: cliente.onesignal_app_id,
+            allowLocalhostAsSecureOrigin: true, // Esto deja que funcione en tu PC de pruebas
+          });
+          
+          // Le mostramos la ventanita al usuario pidiendo permiso
+          OneSignal.Slidedown.promptPush();
+        }
+      } catch (error) {
+        console.error("Error iniciando OneSignal:", error);
+      }
+    };
+
+    iniciarNotificaciones();
+  }, []);
+
   return (
     <Router>
-      {/* Nuestro guardián debe estar dentro del Router para poder navegar al /login */}
       <GuardianInactividad /> 
       
       <Routes>
