@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
 import Swal from 'sweetalert2';
+import OneSignal from 'react-onesignal'; // 🔥 1. IMPORTAMOS ONESIGNAL NATIVO PARA REACT
 
 export default function Login() {
   const navigate = useNavigate();
@@ -32,7 +33,7 @@ export default function Login() {
     colorFondo: '#0a0f1c', 
     requiere_codigo: true, 
     codigo_secreto: '',
-    permitirRegistro: true // 🔥 NUEVO: Control de módulo de registro
+    permitirRegistro: true
   });
 
   useEffect(() => {
@@ -55,7 +56,6 @@ export default function Login() {
 
     try {
       const dominioActual = window.location.hostname;
-      // 🔥 Ajuste: Traemos también mod_registro
       const { data: cliente } = await supabase
         .from('clientes_saas')
         .select('copropiedad_id, mod_registro') 
@@ -67,7 +67,7 @@ export default function Login() {
 
       if (cliente) {
         idActual = cliente.copropiedad_id;
-        registroPermitido = cliente.mod_registro !== false; // Si es null o true, permite. Solo bloquea si es estrictamente false.
+        registroPermitido = cliente.mod_registro !== false; 
         setCopropiedadId(idActual);
         sessionStorage.setItem('copropiedad_id', idActual);
       }
@@ -86,7 +86,7 @@ export default function Login() {
             colorFondo: confData.login_color_fondo || '#0a0f1c',
             requiere_codigo: confData.requiere_codigo ?? true,
             codigo_secreto: confData.codigo_secreto_registro || '',
-            permitirRegistro: registroPermitido // 🔥 Pasamos el valor al estado
+            permitirRegistro: registroPermitido 
           });
         }
       }
@@ -96,6 +96,14 @@ export default function Login() {
 
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
+      
+      // 🔥 2. AUTO-LOGIN EN ONESIGNAL (Si el usuario ya estaba logueado de antes)
+      try {
+        await OneSignal.login(session.user.id);
+      } catch (err) {
+        console.error("Error vinculando sesión automática a OneSignal:", err);
+      }
+
       const idActualSession = sessionStorage.getItem('copropiedad_id') || copropiedadId;
       const { data: perfil } = await supabase.from('usuarios').select('rol, copropiedad_id').eq('id', session.user.id).eq('copropiedad_id', idActualSession).maybeSingle();
       const rolReal = perfil?.rol || session.user.user_metadata?.rol;
@@ -121,10 +129,12 @@ export default function Login() {
       
       if (data.user) {
 
-        // 🔥 AQUÍ ES EL LUGAR PERFECTO: Justo al entrar en el if
-        window.OneSignalDeferred.push(function(OneSignal) {
-            OneSignal.login(data.user.id);
-        });
+        // 🔥 3. LOGIN MANUAL EN ONESIGNAL (Le presenta tu ID a OneSignal)
+        try {
+          await OneSignal.login(data.user.id);
+        } catch (err) {
+          console.error("Error vinculando nuevo login a OneSignal:", err);
+        }
         
         const { data: perfil } = await supabase
           .from('usuarios')
@@ -200,7 +210,6 @@ export default function Login() {
   const registrarUsuario = async (e) => {
     e.preventDefault();
     
-    // 🔥 CANDADO DE SEGURIDAD: Por si logran abrir el modal a la fuerza
     if (!config.permitirRegistro) {
         return Swal.fire('Registro Deshabilitado', 'La administración ha deshabilitado el registro de nuevos usuarios.', 'error');
     }

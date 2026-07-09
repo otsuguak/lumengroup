@@ -44,8 +44,11 @@ export default function FormulariosAdmin() {
   const guardarNuevoFormulario = async (e) => {
     e.preventDefault();
     if (!nuevoForm.titulo || !nuevoForm.iframe_url) return Swal.fire('Atención', 'El título y la URL son obligatorios.', 'warning');
-    Swal.fire({ title: 'Vinculando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    
+    Swal.fire({ title: 'Vinculando y Notificando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    
     try {
+      // 1. Guardamos el formulario en la base de datos
       const { error } = await supabase.from('formularios_externos').insert([{
         copropiedad_id: copropiedadId, 
         titulo: nuevoForm.titulo, 
@@ -54,7 +57,23 @@ export default function FormulariosAdmin() {
         activo: true
       }]);
       if (error) throw error;
-      Swal.fire('¡Éxito!', 'Formulario vinculado correctamente', 'success');
+
+      // 🔥 2. MAGIA: DISPARAMOS LA NOTIFICACIÓN PUSH 🔥
+      try {
+        await supabase.functions.invoke('enviar_push', {
+          body: {
+            titulo: '📋 Nueva Encuesta Disponible',
+            mensaje: `Participa ahora: ${nuevoForm.titulo}. ${nuevoForm.descripcion || ''}`,
+            copropiedadId: copropiedadId
+          }
+        });
+      } catch (pushError) {
+        console.error("Error al enviar el Push del formulario:", pushError);
+        // Nota: Si el push falla por algo, no bloqueamos al usuario, el formulario ya se guardó.
+      }
+
+      // 3. Finalizamos con éxito
+      Swal.fire('¡Éxito!', 'Formulario publicado y notificado a los residentes.', 'success');
       setNuevoForm({ titulo: '', descripcion: '', iframe_url: '' });
       setMostrarModalEncuesta(false);
       cargarDatos(copropiedadId);

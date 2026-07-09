@@ -7,22 +7,15 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
   const [asignaciones, setAsignaciones] = useState([]);
   const [cargando, setCargando] = useState(false);
   
-  // Estado para el buscador de la tabla inferior
   const [busqueda, setBusqueda] = useState('');
-
-  // Estados del Buscador Desplegable (Custom Dropdown)
   const [filtroDropdown, setFiltroDropdown] = useState('');
   const [dropdownAbierto, setDropdownAbierto] = useState(false);
-
-  // 🔥 ESTADOS PARA EL VISOR DE DOCUMENTOS (IFRAME) 🔥
   const [documentoIframe, setDocumentoIframe] = useState(null);
 
-  // Estados para MODO EDICIÓN
   const [modoEdicion, setModoEdicion] = useState(false);
   const [idEdicion, setIdEdicion] = useState(null);
   const [urlsExistentes, setUrlsExistentes] = useState({ tarjeta: null, soat: null, tecno: null });
 
-  // Formulario
   const [inmuebleSeleccionado, setInmuebleSeleccionado] = useState('');
   const [nombrePrecargado, setNombrePrecargado] = useState('');
   const [numeroParqueadero, setNumeroParqueadero] = useState('');
@@ -30,7 +23,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
   const [tipoParqueadero, setTipoParqueadero] = useState('Carro');
   const [tipoVehiculo, setTipoVehiculo] = useState('Automóvil');
   
-  // Archivos
   const [docTarjeta, setDocTarjeta] = useState(null);
   const [docSoat, setDocSoat] = useState(null);
   const [docTecno, setDocTecno] = useState(null);
@@ -64,7 +56,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     const inmuebleTexto = r.inmueble || '';
     const nombreTexto = r.nombre || '';    
     const filtro = filtroDropdown || '';
-
     return inmuebleTexto.toLowerCase().includes(filtro.toLowerCase()) || 
            nombreTexto.toLowerCase().includes(filtro.toLowerCase());
   });
@@ -72,14 +63,12 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
   const seleccionarResidente = (inmueble, nombre) => {
     const inmuebleSeguro = inmueble || 'Sin Inmueble';
     const nombreSeguro = nombre || 'Sin Nombre';
-
     setInmuebleSeleccionado(inmuebleSeguro);
     setNombrePrecargado(nombreSeguro);
     setFiltroDropdown(`${inmuebleSeguro} - ${nombreSeguro}`); 
     setDropdownAbierto(false); 
   };
 
-  // 🔥 MEJORA DE SEGURIDAD: Ya no fallará en silencio 🔥
   const subirArchivo = async (archivo, tipoDoc) => {
     if (!archivo) return null;
     const fileExt = archivo.name.split('.').pop();
@@ -93,16 +82,12 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
         contentType: archivo.type 
       });
 
-    // Si hay error al subir, lanzamos una excepción para detener todo y avisarte
     if (error) {
       console.error(`Error subiendo ${tipoDoc}:`, error);
-      throw new Error(`No se pudo subir el archivo de ${tipoDoc}. Asegúrate de que el bucket "documentos_vehiculos" exista en Supabase y tenga permisos. Detalle: ${error.message}`);
+      throw new Error(`No se pudo subir el archivo de ${tipoDoc}.`);
     }
     
-    const { data: publicUrlData } = supabase.storage
-      .from('documentos_vehiculos')
-      .getPublicUrl(fileName);
-      
+    const { data: publicUrlData } = supabase.storage.from('documentos_vehiculos').getPublicUrl(fileName);
     return publicUrlData.publicUrl;
   };
 
@@ -152,7 +137,7 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
   const eliminarAsignacion = async (asig) => {
     const { isConfirmed } = await Swal.fire({
       title: '¿Eliminar registro?',
-      text: `Estás a punto de borrar la asignación de la placa ${asig.placa}. Esta acción no se puede deshacer y borrará permanentemente sus documentos.`,
+      text: `Estás a punto de borrar la asignación de la placa ${asig.placa}. Esta acción no se puede deshacer.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#ef4444',
@@ -163,18 +148,14 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
 
     if (isConfirmed) {
       const { error } = await supabase.from('parqueaderos_asignados').delete().eq('id', asig.id);
-      
       if (error) {
         Swal.fire('Error', 'No se pudo eliminar el registro.', 'error');
       } else {
         const urls = [asig.doc_tarjeta_propiedad, asig.doc_soat, asig.doc_tecnomecanica].filter(Boolean);
-        
         if (urls.length > 0) {
           const filesToDelete = urls.map(url => decodeURIComponent(url.split('/').pop()));
-          const { error: errStorage } = await supabase.storage.from('documentos_vehiculos').remove(filesToDelete);
-          if (errStorage) console.error("Error limpiando basura:", errStorage);
+          await supabase.storage.from('documentos_vehiculos').remove(filesToDelete);
         }
-
         Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Registro y archivos borrados', showConfirmButton: false, timer: 2000 });
         cargarAsignaciones();
         if (modoEdicion && idEdicion === asig.id) limpiarFormulario(); 
@@ -189,8 +170,9 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     }
 
     setCargando(true);
+    Swal.fire({ title: 'Guardando y Notificando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
     try {
-      // Si esto falla ahora, saltará directamente al Catch mostrando el error real
       const urlTarjeta = docTarjeta ? await subirArchivo(docTarjeta, 'tarjeta') : (modoEdicion ? urlsExistentes.tarjeta : null);
       const urlSoat = docSoat ? await subirArchivo(docSoat, 'soat') : (modoEdicion ? urlsExistentes.soat : null);
       const urlTecno = docTecno ? await subirArchivo(docTecno, 'tecno') : (modoEdicion ? urlsExistentes.tecno : null);
@@ -216,18 +198,71 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
         if (docTarjeta && urlsExistentes.tarjeta) archivosReemplazados.push(decodeURIComponent(urlsExistentes.tarjeta.split('/').pop()));
         if (docSoat && urlsExistentes.soat) archivosReemplazados.push(decodeURIComponent(urlsExistentes.soat.split('/').pop()));
         if (docTecno && urlsExistentes.tecno) archivosReemplazados.push(decodeURIComponent(urlsExistentes.tecno.split('/').pop()));
-        
-        if (archivosReemplazados.length > 0) {
-          await supabase.storage.from('documentos_vehiculos').remove(archivosReemplazados);
-        }
-
-        Swal.fire('¡Actualizado!', 'El registro fue modificado con éxito.', 'success');
+        if (archivosReemplazados.length > 0) await supabase.storage.from('documentos_vehiculos').remove(archivosReemplazados);
       } else {
         const { error } = await supabase.from('parqueaderos_asignados').insert([payload]);
         if (error) throw error;
-        Swal.fire('¡Éxito!', 'Parqueadero asignado y documentos guardados.', 'success');
       }
-      
+
+      // =========================================================================
+      // 🔥 MAGIA DE NOTIFICACIONES: BUSCAR USUARIO Y ENVIAR INDIVIDUALMENTE 🔥
+      // =========================================================================
+      try {
+        // 1. Buscamos al usuario dueño del inmueble
+        const { data: usuarioDestino } = await supabase
+          .from('usuarios')
+          .select('email, id')
+          .eq('inmueble', inmuebleSeleccionado)
+          .eq('copropiedad_id', copropiedadId)
+          .maybeSingle();
+
+        if (usuarioDestino && usuarioDestino.email) {
+          // 2. ENVIAR CORREO EXACTO AL USUARIO
+          await supabase.functions.invoke('enviar_correo', {
+            body: {
+              targetEmails: [usuarioDestino.email],
+              payload: {
+                titulo: '🚗 Asignación de Parqueadero Actualizada',
+                html: `
+                  <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+                    <div style="background-color: #0f172a; padding: 20px; text-align: center;">
+                      <h2 style="color: #ffffff; margin: 0;">Gestión de Parqueaderos</h2>
+                    </div>
+                    <div style="padding: 30px;">
+                      <p style="font-size: 16px;">Hola <strong>${nombrePrecargado}</strong>,</p>
+                      <p style="font-size: 16px; line-height: 1.5;">Se ha registrado o actualizado una asignación de parqueadero para tu inmueble (<strong>${inmuebleSeleccionado}</strong>).</p>
+                      <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <ul style="list-style: none; padding: 0; margin: 0; font-size: 15px;">
+                          <li style="margin-bottom: 10px;">🅿️ <strong>Parqueadero:</strong> <span style="color: #0284c7; font-weight: bold;">${numeroParqueadero}</span></li>
+                          <li style="margin-bottom: 10px;">🏷️ <strong>Placa:</strong> ${placa.toUpperCase()}</li>
+                          <li>🚙 <strong>Vehículo:</strong> ${tipoVehiculo}</li>
+                        </ul>
+                      </div>
+                      <p style="font-size: 16px; line-height: 1.5;">Por favor, ingresa a la plataforma LumenGroup y revisa tu perfil para verificar los detalles y documentos anexados.</p>
+                    </div>
+                  </div>
+                `,
+                nombre_remitente: 'Administración'
+              }
+            }
+          });
+
+          // 3. ENVIAR PUSH (Le pasamos el targetUserId para que la Edge Function sepa a quién enviarlo)
+          await supabase.functions.invoke('enviar_push', {
+            body: {
+              titulo: '🚗 Parqueadero Asignado',
+              mensaje: `Puesto ${numeroParqueadero} asignado a tu inmueble (${inmuebleSeleccionado}). Revisa tu perfil.`,
+              copropiedadId: copropiedadId,
+              targetUserId: usuarioDestino.id // Esto es clave para el envío individual
+            }
+          });
+        }
+      } catch (notifError) {
+        console.error("Error enviando notificaciones individuales:", notifError);
+      }
+      // =========================================================================
+
+      Swal.fire('¡Éxito!', modoEdicion ? 'El registro fue modificado y notificado.' : 'Parqueadero asignado y residente notificado.', 'success');
       limpiarFormulario();
       cargarAsignaciones(); 
     } catch (error) {
@@ -241,7 +276,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
     const inmuebleTexto = asig.inmueble || '';
     const placaTexto = asig.placa || '';
     const filtro = busqueda || '';
-
     return inmuebleTexto.toLowerCase().includes(filtro.toLowerCase()) ||
            placaTexto.toLowerCase().includes(filtro.toLowerCase());
   });
@@ -408,7 +442,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
                   <span className="text-xs text-slate-500 hidden md:inline-block">{asig.tipo_vehiculo}</span>
                 </td>
                 
-                {/* 🔥 BOTONES PARA ABRIR EL IFRAME 🔥 */}
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-2">
                     {asig.doc_tarjeta_propiedad ? (
@@ -452,9 +485,6 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
         </table>
       </div>
 
-      {/* ============================================================== */}
-      {/* 🔥 MODAL IFRAME PARA VER DOCUMENTOS 🔥                         */}
-      {/* ============================================================== */}
       {documentoIframe && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
           <div className="bg-white w-full max-w-4xl h-[85vh] rounded-2xl flex flex-col overflow-hidden shadow-2xl relative animate-fade-in-up">
