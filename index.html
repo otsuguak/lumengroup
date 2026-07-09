@@ -8,6 +8,21 @@
     <meta name="theme-color" content="#8b5cf6" />
     <link rel="apple-touch-icon" href="/Icon-192x192.png" />
     <title>LumenGroup</title>
+    
+    <!-- 🚀 INICIO CÓDIGO ONESIGNAL -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      window.OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "d2db1761-2d5e-4274-acf2-501ddfe9f110",
+          notifyButton: {
+            enable: true, // Agrega una campanita flotante para suscribirse
+          },
+        });
+      });
+    </script>
+    <!-- 🏁 FIN CÓDIGO ONESIGNAL -->
   </head>
   <body>
     <div id="root"></div>
