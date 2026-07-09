@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import { enviarNotificacionInteligente } from '../utils/notificaciones'; // 🔥 1. Importamos nuestra función central
 import Swal from 'sweetalert2';
 
 export default function NoticiasAdmin() {
@@ -7,7 +8,7 @@ export default function NoticiasAdmin() {
   const [cargando, setCargando] = useState(true);
   const [subiendo, setSubiendo] = useState(false);
 
-  // Estados para el formulario (Tus estados originales intactos)
+  // Estados para el formulario
   const [tipo, setTipo] = useState('Informativo');
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [titulo, setTitulo] = useState('');
@@ -22,13 +23,12 @@ export default function NoticiasAdmin() {
   const cargarNoticias = async () => {
     setCargando(true);
     try {
-      // BLINDAJE: Obtenemos el ID del conjunto desde la sesión
       const idConjunto = sessionStorage.getItem('copropiedad_id');
       
       const { data, error } = await supabase
         .from('noticias')
         .select('*')
-        .eq('copropiedad_id', idConjunto) // Filtro de seguridad obligatorio
+        .eq('copropiedad_id', idConjunto)
         .order('fecha', { ascending: false });
 
       if (error) throw error;
@@ -58,7 +58,7 @@ export default function NoticiasAdmin() {
       let imageUrl = null;
       const idConjunto = sessionStorage.getItem('copropiedad_id');
 
-      // 1. Subida de imagen al Storage (Lógica intacta)
+      // 1. Subida de imagen al Storage
       if (archivoFoto) {
         const fileExt = archivoFoto.name.split('.').pop();
         const fileName = `noticia_${idConjunto}_${Date.now()}.${fileExt}`;
@@ -73,9 +73,9 @@ export default function NoticiasAdmin() {
         imageUrl = publicUrl;
       }
 
-      // 2. Registro en Base de Datos con ID de Copropiedad
+      // 2. Registro en Base de Datos
       const { error: dbError } = await supabase.from('noticias').insert([{
-        copropiedad_id: idConjunto, // Seguridad multitenant
+        copropiedad_id: idConjunto, 
         tipo, 
         fecha, 
         titulo, 
@@ -86,11 +86,27 @@ export default function NoticiasAdmin() {
 
       if (dbError) throw dbError;
 
+      // 🔥 3. NUEVO: LÓGICA DE NOTIFICACIONES PUSH 🔥
+      // Lo envolvemos en un try/catch para que si falla el push, no arroje error en la publicación de la noticia.
+      try {
+        await enviarNotificacionInteligente({
+          tipoEvento: 'nueva_noticia', // Este nombre debe coincidir con el que tengas en la base de datos de plantillas
+          copropiedadId: idConjunto,
+          userId: null, // Dejamos en null para que le llegue a TODO el conjunto
+          emailsDestino: [], 
+          datosDinamicos: { titulo_noticia: titulo, resumen_noticia: resumen }, // Pasamos variables por si la plantilla las usa
+          enviarMail: false, // Apagado para noticias
+          enviarPush: true   // Encendido para enviar alerta al celular
+        });
+      } catch (pushError) {
+        console.error("Notificación Push falló pero la noticia se guardó:", pushError);
+      }
+      // 🔥 FIN LÓGICA NOTIFICACIONES 🔥
+
       Swal.fire('¡Éxito!', 'La noticia ha sido publicada en la cartelera digital.', 'success');
       
       // Limpieza de formulario
       setTitulo(''); setResumen(''); setContenido(''); setArchivoFoto(null);
-      // Resetear el input file manualmente
       const fileInput = document.getElementById('foto-noticia-input');
       if (fileInput) fileInput.value = '';
       
@@ -116,11 +132,9 @@ export default function NoticiasAdmin() {
 
     if (result.isConfirmed) {
       try {
-        // Borramos registro
         const { error } = await supabase.from('noticias').delete().eq('id', id);
         if (error) throw error;
 
-        // Limpieza de Storage si existe imagen (Mejora de optimización)
         if (imageUrl) {
           const fileName = imageUrl.split('/').pop();
           await supabase.storage.from('noticias').remove([fileName]);

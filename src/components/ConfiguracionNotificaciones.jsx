@@ -6,10 +6,11 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
   const [plantillas, setPlantillas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [editandoId, setEditandoId] = useState(null);
+  const [tabActivo, setTabActivo] = useState('email'); // 'email' | 'push'
 
   // Estado del formulario
   const [form, setForm] = useState({
-    tipo_evento: 'PAQUETE',
+    tipo_evento: 'nueva_noticia', // Lo ponemos por defecto para facilitar la prueba
     nombre_remitente: '',
     asunto: '',
     mensaje_base: ''
@@ -42,7 +43,7 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
 
   const limpiarFormulario = () => {
     setForm({
-      tipo_evento: 'PAQUETE',
+      tipo_evento: 'nueva_noticia',
       nombre_remitente: '',
       asunto: '',
       mensaje_base: ''
@@ -50,17 +51,25 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
     setEditandoId(null);
   };
 
+  const cambiarTab = (nuevoTab) => {
+    setTabActivo(nuevoTab);
+    limpiarFormulario();
+  };
+
   const guardarPlantilla = async (e) => {
     e.preventDefault();
-    if (!form.nombre_remitente || !form.asunto || !form.mensaje_base) {
-      return Swal.fire('Atención', 'Por favor llena todos los campos', 'warning');
+    
+    // Validación: El remitente solo es obligatorio si es Email
+    if ((tabActivo === 'email' && !form.nombre_remitente) || !form.asunto || !form.mensaje_base) {
+      return Swal.fire('Atención', 'Por favor llena todos los campos obligatorios', 'warning');
     }
 
     setCargando(true);
     const payload = {
       copropiedad_id: copropiedadId,
       tipo_evento: form.tipo_evento,
-      nombre_remitente: form.nombre_remitente,
+      canal: tabActivo, // Inyectamos el canal según la pestaña activa
+      nombre_remitente: tabActivo === 'email' ? form.nombre_remitente : null,
       asunto: form.asunto,
       mensaje_base: form.mensaje_base
     };
@@ -75,11 +84,11 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
       if (error) Swal.fire('Error', 'No se pudo actualizar', 'error');
       else Swal.fire('¡Éxito!', 'Plantilla actualizada correctamente', 'success');
     } else {
-      // Validar que no exista ya ese tipo de evento
-      const existe = plantillas.find(p => p.tipo_evento === form.tipo_evento);
+      // Validar que no exista ya ese tipo de evento EN ESE MISMO CANAL
+      const existe = plantillas.find(p => p.tipo_evento === form.tipo_evento && p.canal === tabActivo);
       if (existe) {
         setCargando(false);
-        return Swal.fire('Atención', `Ya existe una plantilla para ${form.tipo_evento}. Edítala en su lugar.`, 'warning');
+        return Swal.fire('Atención', `Ya existe una plantilla de ${tabActivo} para este evento. Edítala en su lugar.`, 'warning');
       }
 
       // Crear nueva
@@ -98,11 +107,13 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
   const editarPlantilla = (plantilla) => {
     setForm({
       tipo_evento: plantilla.tipo_evento,
-      nombre_remitente: plantilla.nombre_remitente,
+      nombre_remitente: plantilla.nombre_remitente || '',
       asunto: plantilla.asunto,
       mensaje_base: plantilla.mensaje_base
     });
     setEditandoId(plantilla.id);
+    // Si por alguna razón editamos desde otro lado, forzamos el tab
+    if (plantilla.canal !== tabActivo) setTabActivo(plantilla.canal); 
   };
 
   const eliminarPlantilla = async (id) => {
@@ -132,19 +143,45 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
     if (!error) cargarPlantillas();
   };
 
+  // Filtramos la lista de la derecha para mostrar solo las del tab activo
+  const plantillasFiltradas = plantillas.filter(p => p.canal === tabActivo);
+
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Correos y Comunicaciones</h2>
-        <p className="text-gray-600">Configura cómo y qué se envía a los residentes desde LumenGroup.</p>
+        <h2 className="text-2xl font-bold text-gray-800">Centro de Notificaciones</h2>
+        <p className="text-gray-600">Configura los mensajes automáticos que reciben los residentes.</p>
+      </div>
+
+      {/* PESTAÑAS (TABS) */}
+      <div className="flex space-x-1 bg-gray-200/50 p-1 rounded-xl w-fit mb-8 border border-gray-200">
+        <button
+          onClick={() => cambiarTab('email')}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
+            tabActivo === 'email' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          📧 Correo Electrónico
+        </button>
+        <button
+          onClick={() => cambiarTab('push')}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
+            tabActivo === 'push' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          📱 Alertas Push
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* PARTE IZQUIERDA: FORMULARIO */}
         <div className="lg:col-span-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">
-            {editandoId ? 'Editar Plantilla' : 'Nueva Plantilla'}
+          <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+            {editandoId ? 'Editar Plantilla' : 'Nueva Plantilla'} 
+            <span className="text-xs bg-gray-100 px-2 py-1 rounded-md font-mono text-gray-500 uppercase tracking-wider">
+              {tabActivo}
+            </span>
           </h3>
           <form onSubmit={guardarPlantilla} className="space-y-4">
             <div>
@@ -156,6 +193,7 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
                 disabled={editandoId !== null}
                 className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100"
               >
+                <option value="nueva_noticia">Nueva Noticia (Cartelera)</option>
                 <option value="PAQUETE">Recepción de Paquetes</option>
                 <option value="VISITANTE">Ingreso de Visitantes</option>
                 <option value="PQRS">Respuesta PQRS</option>
@@ -163,24 +201,29 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Remitente (De:)</label>
-              <input 
-                type="text" 
-                name="nombre_remitente" 
-                placeholder="Ej: Administración Bosques" 
-                value={form.nombre_remitente} 
-                onChange={handleInputChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
+            {/* Solo mostramos Remitente si es un Correo */}
+            {tabActivo === 'email' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Remitente (De:)</label>
+                <input 
+                  type="text" 
+                  name="nombre_remitente" 
+                  placeholder="Ej: Administración Bosques" 
+                  value={form.nombre_remitente} 
+                  onChange={handleInputChange}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+            )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Asunto del Correo</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {tabActivo === 'email' ? 'Asunto del Correo' : 'Título de la Notificación'}
+              </label>
               <input 
                 type="text" 
                 name="asunto" 
-                placeholder="Ej: ¡Tienes un paquete en portería!" 
+                placeholder={tabActivo === 'email' ? "Ej: ¡Tienes un paquete en portería!" : "Ej: ¡Nuevo Paquete!"} 
                 value={form.asunto} 
                 onChange={handleInputChange}
                 className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
@@ -188,12 +231,16 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mensaje Base</label>
-              <p className="text-xs text-blue-600 mb-2">Tip: Usa <b>{'{nombre}'}</b> para saludar al residente por su nombre.</p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {tabActivo === 'email' ? 'Cuerpo del Mensaje' : 'Resumen Corto (Máx. 50 palabras)'}
+              </label>
+              <p className="text-[11px] text-blue-600 mb-2 leading-tight">
+                Variables soportadas: <b>{'{nombre}'}</b>, <b>{'{titulo}'}</b>
+              </p>
               <textarea 
                 name="mensaje_base" 
-                rows="4" 
-                placeholder="Hola {nombre}, te informamos que..." 
+                rows={tabActivo === 'email' ? "5" : "3"} 
+                placeholder={tabActivo === 'email' ? "Hola {nombre}, te informamos que..." : "{nombre}, tienes una novedad..."} 
                 value={form.mensaje_base} 
                 onChange={handleInputChange}
                 className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
@@ -221,21 +268,23 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
           </form>
         </div>
 
-        {/* PARTE DERECHA: LISTADO DE PLANTILLAS */}
+        {/* PARTE DERECHA: LISTADO DE PLANTILLAS FILTRADAS */}
         <div className="lg:col-span-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {plantillas.length === 0 && !cargando && (
+            {plantillasFiltradas.length === 0 && !cargando && (
               <div className="col-span-full p-8 text-center bg-white rounded-xl border border-dashed border-gray-300">
-                <p className="text-gray-500">Aún no has configurado ninguna plantilla de correos.</p>
+                <p className="text-gray-500">
+                  Aún no has configurado ninguna plantilla para <b>{tabActivo === 'email' ? 'Correos' : 'Notificaciones Push'}</b>.
+                </p>
               </div>
             )}
 
-            {plantillas.map(plantilla => (
-              <div key={plantilla.id} className={`bg-white rounded-xl shadow-sm border p-5 transition-all ${plantilla.modulo_activo ? 'border-l-4 border-l-emerald-500 border-t-transparent border-r-transparent border-b-transparent' : 'border-l-4 border-l-gray-300 border-t-transparent border-r-transparent border-b-transparent opacity-75'}`}>
+            {plantillasFiltradas.map(plantilla => (
+              <div key={plantilla.id} className={`bg-white rounded-xl shadow-sm border p-5 flex flex-col transition-all ${plantilla.modulo_activo ? 'border-l-4 border-l-emerald-500 border-t-transparent border-r-transparent border-b-transparent' : 'border-l-4 border-l-gray-300 border-t-transparent border-r-transparent border-b-transparent opacity-75'}`}>
                 
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-md mb-2">
+                    <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest rounded-md mb-2">
                       {plantilla.tipo_evento}
                     </span>
                     <h4 className="font-semibold text-gray-800 line-clamp-1">{plantilla.asunto}</h4>
@@ -244,14 +293,18 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
                   {/* Toggle Switch */}
                   <button 
                     onClick={() => toggleActivo(plantilla.id, plantilla.modulo_activo)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${plantilla.modulo_activo ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${plantilla.modulo_activo ? 'bg-emerald-500' : 'bg-gray-300'}`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${plantilla.modulo_activo ? 'translate-x-6' : 'translate-x-1'}`} />
                   </button>
                 </div>
 
-                <div className="text-sm text-gray-600 mb-4 line-clamp-2">
-                  <b>De:</b> {plantilla.nombre_remitente} <br/>
+                <div className="text-sm text-gray-600 mb-4 line-clamp-3 bg-gray-50 p-3 rounded-lg border border-gray-100 flex-1">
+                  {tabActivo === 'email' && (
+                    <span className="block text-[11px] text-gray-400 mb-1 border-b border-gray-200 pb-1">
+                      <b>De:</b> {plantilla.nombre_remitente}
+                    </span>
+                  )}
                   {plantilla.mensaje_base}
                 </div>
 
