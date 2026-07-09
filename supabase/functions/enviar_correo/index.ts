@@ -1,23 +1,31 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-// Configuración de CORS para que tu React pueda comunicarse con este servidor
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
 serve(async (req) => {
-  // Si es una petición de validación (CORS), responder OK
+  // 1. Manejar el bloqueo de CORS de Vercel
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Recibimos los datos desde tu React (Celador)
-    const { to, subject, html } = await req.json()
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+    const { targetEmails, payload } = await req.json()
 
-    // Hacemos la petición a Resend
+    // 2. Traer la llave secreta de Resend
+    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+
+    if (!RESEND_API_KEY) {
+      throw new Error("Falta la llave de Resend en Supabase.");
+    }
+
+    if (!targetEmails || targetEmails.length === 0) {
+      throw new Error("No hay destinatarios para enviar el correo.");
+    }
+
+    // 3. Disparar el mensaje a Resend
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -25,19 +33,25 @@ serve(async (req) => {
         'Authorization': `Bearer ${RESEND_API_KEY}`
       },
       body: JSON.stringify({
-        from: 'Copropiedapp <onboarding@resend.dev>', // Correo temporal de prueba
-        to: [to],
-        subject: subject,
-        html: html
+        // IMPORTANTE: Aquí pon el dominio que verificaste en Resend
+        from: `${payload.nombre_remitente || 'LumenGroup'} <notificaciones@tudominio.com>`, 
+        to: targetEmails,
+        subject: payload.titulo,
+        html: payload.html,
       })
-    })
+    });
 
-    const data = await res.json()
-    
-    return new Response(JSON.stringify(data), {
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || "Error al comunicarse con Resend");
+    }
+
+    return new Response(JSON.stringify({ success: true, data }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
+
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
