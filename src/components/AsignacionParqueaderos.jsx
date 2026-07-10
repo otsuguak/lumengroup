@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import Swal from 'sweetalert2';
+import { generarCascaronHTML } from '../utils/plantillas';
 
 export default function AsignacionParqueaderos({ copropiedadId }) {
   const [residentes, setResidentes] = useState([]);
@@ -203,12 +204,10 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
         const { error } = await supabase.from('parqueaderos_asignados').insert([payload]);
         if (error) throw error;
       }
-
       // =========================================================================
-      // 🔥 MAGIA DE NOTIFICACIONES: BUSCAR USUARIO Y ENVIAR INDIVIDUALMENTE 🔥
+      // 🔥 MAGIA DE NOTIFICACIONES SAAS (CON PLANTILLAS DINÁMICAS) 🔥
       // =========================================================================
       try {
-        // 1. Buscamos al usuario dueño del inmueble
         const { data: usuarioDestino } = await supabase
           .from('usuarios')
           .select('email, id')
@@ -217,48 +216,58 @@ export default function AsignacionParqueaderos({ copropiedadId }) {
           .maybeSingle();
 
         if (usuarioDestino && usuarioDestino.email) {
-          // 2. ENVIAR CORREO EXACTO AL USUARIO
+          
+          // 1. Buscamos si el admin configuró plantillas para 'PARQUEADERO'
+          const { data: plantillasActivas } = await supabase
+            .from('plantillas_notificaciones')
+            .select('*')
+            .eq('copropiedad_id', copropiedadId)
+            .eq('tipo_evento', 'PARQUEADERO')
+            .eq('modulo_activo', true);
+
+          const plantillaEmail = plantillasActivas?.find(p => p.canal === 'email');
+          const plantillaPush = plantillasActivas?.find(p => p.canal === 'push');
+
+          // 2. Función maestra para reemplazar las variables {llaves}
+          const reemplazarVariables = (texto) => {
+            if (!texto) return '';
+            return texto
+              .replace(/{nombre}/g, nombrePrecargado)
+              .replace(/{inmueble}/g, inmuebleSeleccionado)
+              .replace(/{puesto}/g, numeroParqueadero)
+              .replace(/{placa}/g, placa.toUpperCase())
+              .replace(/{vehiculo}/g, tipoVehiculo);
+          };
+
+          // 3. ARMAMOS EL CORREO (Usamos la plantilla del admin, o un texto por defecto)
+          const asuntoEmail = plantillaEmail ? reemplazarVariables(plantillaEmail.asunto) : '🚗 Asignación de Parqueadero';
+          const remitenteEmail = plantillaEmail?.nombre_remitente || 'Administración';
+          const textoBaseEmail = plantillaEmail 
+            ? reemplazarVariables(plantillaEmail.mensaje_base) 
+            : `Hola ${nombrePrecargado}, te confirmamos que al inmueble ${inmuebleSeleccionado} se le asignó el parqueadero ${numeroParqueadero} para tu vehículo placa ${placa.toUpperCase()}.`;
+          
+          // Envolvemos el texto del admin en el HTML hermoso
+          const htmlFinal = generarCascaronHTML(asuntoEmail, textoBaseEmail);
+
           await supabase.functions.invoke('enviar_correo', {
             body: {
               targetEmails: [usuarioDestino.email],
-              payload: {
-                titulo: '🚗 Asignación de Parqueadero Actualizada',
-                html: `
-                  <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
-                    <div style="background-color: #0f172a; padding: 20px; text-align: center;">
-                      <h2 style="color: #ffffff; margin: 0;">Gestión de Parqueaderos</h2>
-                    </div>
-                    <div style="padding: 30px;">
-                      <p style="font-size: 16px;">Hola <strong>${nombrePrecargado}</strong>,</p>
-                      <p style="font-size: 16px; line-height: 1.5;">Se ha registrado o actualizado una asignación de parqueadero para tu inmueble (<strong>${inmuebleSeleccionado}</strong>).</p>
-                      <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                        <ul style="list-style: none; padding: 0; margin: 0; font-size: 15px;">
-                          <li style="margin-bottom: 10px;">🅿️ <strong>Parqueadero:</strong> <span style="color: #0284c7; font-weight: bold;">${numeroParqueadero}</span></li>
-                          <li style="margin-bottom: 10px;">🏷️ <strong>Placa:</strong> ${placa.toUpperCase()}</li>
-                          <li>🚙 <strong>Vehículo:</strong> ${tipoVehiculo}</li>
-                        </ul>
-                      </div>
-                      <p style="font-size: 16px; line-height: 1.5;">Por favor, ingresa a la plataforma LumenGroup y revisa tu perfil para verificar los detalles y documentos anexados.</p>
-                    </div>
-                  </div>
-                `,
-                nombre_remitente: 'Administración'
-              }
+              payload: { titulo: asuntoEmail, html: htmlFinal, nombre_remitente: remitenteEmail }
             }
           });
 
-          // 3. ENVIAR PUSH (Le pasamos el targetUserId para que la Edge Function sepa a quién enviarlo)
+          // 4. ARMAMOS EL PUSH (Usamos la plantilla del admin, o texto por defecto)
+          const tituloPush = plantillaPush ? reemplazarVariables(plantillaPush.asunto) : '🚗 Parqueadero Asignado';
+          const mensajePush = plantillaPush 
+            ? reemplazarVariables(plantillaPush.mensaje_base) 
+            : `Puesto ${numeroParqueadero} asignado a tu inmueble (${inmuebleSeleccionado}).`;
+
           await supabase.functions.invoke('enviar_push', {
-            body: {
-              titulo: '🚗 Parqueadero Asignado',
-              mensaje: `Puesto ${numeroParqueadero} asignado a tu inmueble (${inmuebleSeleccionado}). Revisa tu perfil.`,
-              copropiedadId: copropiedadId,
-              targetUserId: usuarioDestino.id // Esto es clave para el envío individual
-            }
+            body: { titulo: tituloPush, mensaje: mensajePush, copropiedadId, targetUserId: usuarioDestino.id }
           });
         }
       } catch (notifError) {
-        console.error("Error enviando notificaciones individuales:", notifError);
+        console.error("Error enviando notificaciones dinámicas:", notifError);
       }
       // =========================================================================
 

@@ -2,15 +2,46 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import Swal from 'sweetalert2';
 
+// 🚀 DICCIONARIO MAESTRO DE EVENTOS Y VARIABLES
+const MODULOS_CONFIG = {
+  'PARQUEADERO': { 
+    label: '🚗 Asignación de Parqueadero', 
+    vars: '{nombre}, {inmueble}, {puesto}, {placa}, {vehiculo}' 
+  },
+  'CONVIVENCIA': { 
+    label: '⚠️ Llamados de Atención (Convivencia)', 
+    vars: '{nombre}, {inmueble}, {motivo}' 
+  },
+  'RESERVAS': { 
+    label: '🎟️ Gestión de Reservas', 
+    vars: '{nombre}, {inmueble}, {zona}, {fecha}, {hora}, {estado}' 
+  },
+  'VISITANTES': { 
+    label: '🚶‍♂️ Visitantes y Recepción', 
+    vars: '{nombre}, {inmueble}, {nombre_visitante}, {hora}' 
+  },
+  'PAQUETERIA': { 
+    label: '📦 Recepción de Paquetería', 
+    vars: '{nombre}, {inmueble}, {transportadora}, {fecha}' 
+  },
+  'PQRS': { 
+    label: '🛠️ Respuestas a PQRS', 
+    vars: '{nombre}, {inmueble}, {numero_ticket}, {estado}' 
+  },
+  'MASIVO': { 
+    label: '📢 Comunicados Masivos / Recibos', 
+    vars: '{nombre}, {inmueble}, {mes_facturacion}' 
+  }
+};
+
 export default function ConfiguracionNotificaciones({ copropiedadId }) {
   const [plantillas, setPlantillas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [editandoId, setEditandoId] = useState(null);
-  const [tabActivo, setTabActivo] = useState('email'); // 'email' | 'push'
+  const [tabActivo, setTabActivo] = useState('email'); 
 
-  // Estado del formulario
   const [form, setForm] = useState({
-    tipo_evento: 'nueva_noticia', // Lo ponemos por defecto para facilitar la prueba
+    tipo_evento: 'PARQUEADERO', 
     nombre_remitente: '',
     asunto: '',
     mensaje_base: ''
@@ -43,7 +74,7 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
 
   const limpiarFormulario = () => {
     setForm({
-      tipo_evento: 'nueva_noticia',
+      tipo_evento: 'PARQUEADERO',
       nombre_remitente: '',
       asunto: '',
       mensaje_base: ''
@@ -59,7 +90,6 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
   const guardarPlantilla = async (e) => {
     e.preventDefault();
     
-    // Validación: El remitente solo es obligatorio si es Email
     if ((tabActivo === 'email' && !form.nombre_remitente) || !form.asunto || !form.mensaje_base) {
       return Swal.fire('Atención', 'Por favor llena todos los campos obligatorios', 'warning');
     }
@@ -68,34 +98,24 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
     const payload = {
       copropiedad_id: copropiedadId,
       tipo_evento: form.tipo_evento,
-      canal: tabActivo, // Inyectamos el canal según la pestaña activa
+      canal: tabActivo, 
       nombre_remitente: tabActivo === 'email' ? form.nombre_remitente : null,
       asunto: form.asunto,
       mensaje_base: form.mensaje_base
     };
 
     if (editandoId) {
-      // Actualizar
-      const { error } = await supabase
-        .from('plantillas_notificaciones')
-        .update(payload)
-        .eq('id', editandoId);
-
+      const { error } = await supabase.from('plantillas_notificaciones').update(payload).eq('id', editandoId);
       if (error) Swal.fire('Error', 'No se pudo actualizar', 'error');
       else Swal.fire('¡Éxito!', 'Plantilla actualizada correctamente', 'success');
     } else {
-      // Validar que no exista ya ese tipo de evento EN ESE MISMO CANAL
       const existe = plantillas.find(p => p.tipo_evento === form.tipo_evento && p.canal === tabActivo);
       if (existe) {
         setCargando(false);
-        return Swal.fire('Atención', `Ya existe una plantilla de ${tabActivo} para este evento. Edítala en su lugar.`, 'warning');
+        return Swal.fire('Atención', `Ya existe una plantilla de ${tabActivo} para este evento. Edítala en la lista.`, 'warning');
       }
 
-      // Crear nueva
-      const { error } = await supabase
-        .from('plantillas_notificaciones')
-        .insert([payload]);
-
+      const { error } = await supabase.from('plantillas_notificaciones').insert([payload]);
       if (error) Swal.fire('Error', 'No se pudo guardar', 'error');
       else Swal.fire('¡Éxito!', 'Plantilla creada correctamente', 'success');
     }
@@ -112,14 +132,13 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
       mensaje_base: plantilla.mensaje_base
     });
     setEditandoId(plantilla.id);
-    // Si por alguna razón editamos desde otro lado, forzamos el tab
     if (plantilla.canal !== tabActivo) setTabActivo(plantilla.canal); 
   };
 
   const eliminarPlantilla = async (id) => {
     const result = await Swal.fire({
-      title: '¿Estás seguro?',
-      text: "Esta acción no se puede deshacer",
+      title: '¿Eliminar plantilla?',
+      text: "El sistema usará el texto por defecto si la eliminas.",
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d33',
@@ -135,132 +154,101 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
   };
 
   const toggleActivo = async (id, estadoActual) => {
-    const { error } = await supabase
-      .from('plantillas_notificaciones')
-      .update({ modulo_activo: !estadoActual })
-      .eq('id', id);
-
+    const { error } = await supabase.from('plantillas_notificaciones').update({ modulo_activo: !estadoActual }).eq('id', id);
     if (!error) cargarPlantillas();
   };
 
-  // Filtramos la lista de la derecha para mostrar solo las del tab activo
   const plantillasFiltradas = plantillas.filter(p => p.canal === tabActivo);
+  const varsDisponibles = MODULOS_CONFIG[form.tipo_evento]?.vars || '';
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Centro de Notificaciones</h2>
-        <p className="text-gray-600">Configura los mensajes automáticos que reciben los residentes.</p>
+    <div className="p-6 bg-slate-50 min-h-screen">
+      <div className="mb-8 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Centro de <span className="text-blue-600">Comunicaciones</span></h2>
+          <p className="text-slate-500 text-sm font-medium mt-1">Personaliza el texto de los mensajes automáticos para tu copropiedad.</p>
+        </div>
       </div>
 
-      {/* PESTAÑAS (TABS) */}
-      <div className="flex space-x-1 bg-gray-200/50 p-1 rounded-xl w-fit mb-8 border border-gray-200">
-        <button
-          onClick={() => cambiarTab('email')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-            tabActivo === 'email' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          📧 Correo Electrónico
+      <div className="flex space-x-2 bg-slate-200/50 p-1.5 rounded-xl w-fit mb-6 border border-slate-200">
+        <button onClick={() => cambiarTab('email')} className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-black uppercase tracking-widest transition-all ${tabActivo === 'email' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          📧 Correos
         </button>
-        <button
-          onClick={() => cambiarTab('push')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-            tabActivo === 'push' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          📱 Alertas Push
+        <button onClick={() => cambiarTab('push')} className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-black uppercase tracking-widest transition-all ${tabActivo === 'push' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          📱 App (Push)
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* PARTE IZQUIERDA: FORMULARIO */}
-        <div className="lg:col-span-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
-            {editandoId ? 'Editar Plantilla' : 'Nueva Plantilla'} 
-            <span className="text-xs bg-gray-100 px-2 py-1 rounded-md font-mono text-gray-500 uppercase tracking-wider">
+        <div className="lg:col-span-5 bg-white p-6 rounded-2xl shadow-xl shadow-slate-200/40 border border-slate-100 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
+          
+          <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center justify-between">
+            {editandoId ? '✏️ Editando Plantilla' : '✨ Nueva Plantilla'} 
+            <span className={`text-[10px] px-3 py-1 rounded-full uppercase tracking-widest ${tabActivo === 'email' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
               {tabActivo}
             </span>
           </h3>
-          <form onSubmit={guardarPlantilla} className="space-y-4">
+          
+          <form onSubmit={guardarPlantilla} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Módulo / Tipo de Evento</label>
-              <select 
-                name="tipo_evento" 
-                value={form.tipo_evento} 
-                onChange={handleInputChange}
-                disabled={editandoId !== null}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100"
-              >
-                <option value="nueva_noticia">Nueva Noticia (Cartelera)</option>
-                <option value="PAQUETE">Recepción de Paquetes</option>
-                <option value="VISITANTE">Ingreso de Visitantes</option>
-                <option value="PQRS">Respuesta PQRS</option>
-                <option value="MASIVO">Comunicado Masivo</option>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Módulo Operativo</label>
+              <select name="tipo_evento" value={form.tipo_evento} onChange={handleInputChange} disabled={editandoId !== null} className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-60 cursor-pointer">
+                {Object.entries(MODULOS_CONFIG).map(([key, config]) => (
+                  <option key={key} value={key}>{config.label}</option>
+                ))}
               </select>
             </div>
 
-            {/* Solo mostramos Remitente si es un Correo */}
             {tabActivo === 'email' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Remitente (De:)</label>
-                <input 
-                  type="text" 
-                  name="nombre_remitente" 
-                  placeholder="Ej: Administración Bosques" 
-                  value={form.nombre_remitente} 
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Remitente (Aparece en Bandeja)</label>
+                <input type="text" name="nombre_remitente" placeholder="Ej: Administración Torres del Bosque" value={form.nombre_remitente} onChange={handleInputChange} className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium" />
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
                 {tabActivo === 'email' ? 'Asunto del Correo' : 'Título de la Notificación'}
               </label>
-              <input 
-                type="text" 
-                name="asunto" 
-                placeholder={tabActivo === 'email' ? "Ej: ¡Tienes un paquete en portería!" : "Ej: ¡Nuevo Paquete!"} 
-                value={form.asunto} 
-                onChange={handleInputChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              <input type="text" name="asunto" placeholder={tabActivo === 'email' ? "Ej: 🚗 Asignación de Parqueadero" : "Ej: ¡Nuevo Parqueadero!"} value={form.asunto} onChange={handleInputChange} className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800" />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tabActivo === 'email' ? 'Cuerpo del Mensaje' : 'Resumen Corto (Máx. 50 palabras)'}
+            <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
+              <label className="text-[10px] font-black text-blue-800 uppercase tracking-widest mb-2 block">
+                Cuerpo del Mensaje Personalizado
               </label>
-              <p className="text-[11px] text-blue-600 mb-2 leading-tight">
-                Variables soportadas: <b>{'{nombre}'}</b>, <b>{'{titulo}'}</b>
-              </p>
+              
+              <div className="mb-3">
+                <p className="text-[10px] text-blue-600 font-medium leading-relaxed">
+                  Copia y pega estas variables en tu texto. El sistema las reemplazará automáticamente:
+                </p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {varsDisponibles.split(', ').map((v, i) => (
+                    <span key={i} className="bg-white border border-blue-200 text-blue-700 text-[10px] font-mono px-2 py-0.5 rounded cursor-help" title="Copia esto en tu texto">{v}</span>
+                  ))}
+                </div>
+              </div>
+
               <textarea 
                 name="mensaje_base" 
-                rows={tabActivo === 'email' ? "5" : "3"} 
-                placeholder={tabActivo === 'email' ? "Hola {nombre}, te informamos que..." : "{nombre}, tienes una novedad..."} 
+                rows={tabActivo === 'email' ? "6" : "3"} 
+                placeholder={`Hola {nombre}, te confirmamos que al inmueble {inmueble} se le asignó...`} 
                 value={form.mensaje_base} 
                 onChange={handleInputChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                className="w-full border border-blue-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none font-medium text-slate-700 shadow-inner"
               ></textarea>
+              {tabActivo === 'email' && <p className="text-[10px] text-blue-500 mt-2 italic">Nota: Este texto se insertará automáticamente dentro de nuestra plantilla con diseño oficial.</p>}
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <button 
-                type="submit" 
-                disabled={cargando}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors"
-              >
-                {cargando ? 'Guardando...' : (editandoId ? 'Actualizar' : 'Guardar')}
+            <div className="flex gap-3 pt-2">
+              <button type="submit" disabled={cargando} className="flex-1 bg-slate-900 hover:bg-blue-600 text-white font-black text-xs uppercase tracking-widest py-4 rounded-xl transition-all shadow-lg transform hover:-translate-y-1">
+                {cargando ? 'Guardando...' : (editandoId ? 'Actualizar Plantilla' : 'Guardar Plantilla')}
               </button>
               {editandoId && (
-                <button 
-                  type="button" 
-                  onClick={limpiarFormulario}
-                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
-                >
+                <button type="button" onClick={limpiarFormulario} className="px-6 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-xs uppercase tracking-widest rounded-xl transition-all">
                   Cancelar
                 </button>
               )}
@@ -268,58 +256,47 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
           </form>
         </div>
 
-        {/* PARTE DERECHA: LISTADO DE PLANTILLAS FILTRADAS */}
-        <div className="lg:col-span-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* PARTE DERECHA: LISTADO */}
+        <div className="lg:col-span-7">
+          <div className="grid grid-cols-1 gap-4">
             {plantillasFiltradas.length === 0 && !cargando && (
-              <div className="col-span-full p-8 text-center bg-white rounded-xl border border-dashed border-gray-300">
-                <p className="text-gray-500">
-                  Aún no has configurado ninguna plantilla para <b>{tabActivo === 'email' ? 'Correos' : 'Notificaciones Push'}</b>.
-                </p>
+              <div className="p-10 text-center bg-white rounded-2xl border-2 border-dashed border-slate-200">
+                <span className="text-4xl mb-3 block">📝</span>
+                <p className="text-slate-500 font-medium">Aún no has personalizado plantillas de <b>{tabActivo === 'email' ? 'Correos' : 'Push'}</b>.<br/>Se enviarán los textos por defecto del sistema.</p>
               </div>
             )}
 
             {plantillasFiltradas.map(plantilla => (
-              <div key={plantilla.id} className={`bg-white rounded-xl shadow-sm border p-5 flex flex-col transition-all ${plantilla.modulo_activo ? 'border-l-4 border-l-emerald-500 border-t-transparent border-r-transparent border-b-transparent' : 'border-l-4 border-l-gray-300 border-t-transparent border-r-transparent border-b-transparent opacity-75'}`}>
+              <div key={plantilla.id} className={`bg-white rounded-2xl shadow-sm border p-6 flex flex-col transition-all ${plantilla.modulo_activo ? 'border-l-4 border-l-blue-500' : 'border-l-4 border-l-slate-300 opacity-60'}`}>
                 
-                <div className="flex justify-between items-start mb-3">
+                <div className="flex justify-between items-start mb-4">
                   <div>
-                    <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest rounded-md mb-2">
-                      {plantilla.tipo_evento}
+                    <span className="inline-block px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest rounded-lg mb-2">
+                      {MODULOS_CONFIG[plantilla.tipo_evento]?.label || plantilla.tipo_evento}
                     </span>
-                    <h4 className="font-semibold text-gray-800 line-clamp-1">{plantilla.asunto}</h4>
+                    <h4 className="font-black text-slate-800 text-lg">{plantilla.asunto}</h4>
                   </div>
                   
-                  {/* Toggle Switch */}
-                  <button 
-                    onClick={() => toggleActivo(plantilla.id, plantilla.modulo_activo)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${plantilla.modulo_activo ? 'bg-emerald-500' : 'bg-gray-300'}`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${plantilla.modulo_activo ? 'translate-x-6' : 'translate-x-1'}`} />
+                  <button onClick={() => toggleActivo(plantilla.id, plantilla.modulo_activo)} className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${plantilla.modulo_activo ? 'bg-blue-500' : 'bg-slate-300'}`} title={plantilla.modulo_activo ? "Desactivar envío" : "Activar envío"}>
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform shadow-sm ${plantilla.modulo_activo ? 'translate-x-6' : 'translate-x-1'}`} />
                   </button>
                 </div>
 
-                <div className="text-sm text-gray-600 mb-4 line-clamp-3 bg-gray-50 p-3 rounded-lg border border-gray-100 flex-1">
+                <div className="text-sm text-slate-600 mb-5 bg-slate-50 p-4 rounded-xl border border-slate-100 flex-1 relative">
                   {tabActivo === 'email' && (
-                    <span className="block text-[11px] text-gray-400 mb-1 border-b border-gray-200 pb-1">
-                      <b>De:</b> {plantilla.nombre_remitente}
-                    </span>
+                    <div className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border border-slate-100 rounded">
+                      De: {plantilla.nombre_remitente}
+                    </div>
                   )}
-                  {plantilla.mensaje_base}
+                  <p className="font-medium whitespace-pre-wrap mt-1">{plantilla.mensaje_base}</p>
                 </div>
 
-                <div className="flex gap-3 mt-auto pt-3 border-t border-gray-100">
-                  <button 
-                    onClick={() => editarPlantilla(plantilla)}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-800"
-                  >
-                    Editar
+                <div className="flex gap-2 mt-auto pt-4 border-t border-slate-100">
+                  <button onClick={() => editarPlantilla(plantilla)} className="flex-1 py-2 text-xs font-black uppercase tracking-widest text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
+                    ✏️ Editar
                   </button>
-                  <button 
-                    onClick={() => eliminarPlantilla(plantilla.id)}
-                    className="text-sm font-medium text-red-600 hover:text-red-800"
-                  >
-                    Eliminar
+                  <button onClick={() => eliminarPlantilla(plantilla.id)} className="flex-1 py-2 text-xs font-black uppercase tracking-widest text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                    🗑️ Eliminar
                   </button>
                 </div>
 
