@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import Swal from 'sweetalert2';
+import * as XLSX from 'xlsx'; // IMPORTANTE: Necesitas tener instalada esta librería (npm install xlsx)
 
 export default function AdminParqueadero({ copropiedadId }) {
   const [pestanaActiva, setPestanaActiva] = useState('arqueo');
@@ -8,7 +9,7 @@ export default function AdminParqueadero({ copropiedadId }) {
   // Estados de datos
   const [registros, setRegistros] = useState([]);
   const [vigilantesTurno, setVigilantesTurno] = useState([]);
-  const [historialTurnos, setHistorialTurnos] = useState([]); // Todos los turnos
+  const [historialTurnos, setHistorialTurnos] = useState([]);
   const [cargando, setCargando] = useState(true);
 
   // Estados del filtro de arqueo
@@ -17,14 +18,19 @@ export default function AdminParqueadero({ copropiedadId }) {
   // Estados de formulario de tarifas
   const [minutosCarro, setMinutosCarro] = useState(120);
   const [valorCarro, setValorCarro] = useState(3000);
-  const [modoCarro, setModoCarro] = useState('Hora'); // NUEVO
+  const [modoCarro, setModoCarro] = useState('Hora'); 
 
   const [minutosMoto, setMinutosMoto] = useState(120);
   const [valorMoto, setValorMoto] = useState(1000);
-  const [modoMoto, setModoMoto] = useState('Hora'); // NUEVO
+  const [modoMoto, setModoMoto] = useState('Hora'); 
 
   const [aplicaIva, setAplicaIva] = useState(false);
   const [porcentajeIva, setPorcentajeIva] = useState(19);
+
+  // 🔥 NUEVOS ESTADOS PARA HISTORIAL VISITANTES 🔥
+  const [filtroFechaInicio, setFiltroFechaInicio] = useState('');
+  const [filtroFechaFin, setFiltroFechaFin] = useState('');
+  const [filtroInmuebleHistorial, setFiltroInmuebleHistorial] = useState('');
 
   useEffect(() => {
     cargarDatos();
@@ -144,7 +150,6 @@ export default function AdminParqueadero({ copropiedadId }) {
     });
   };
 
-  // --- FUNCIONES DE BORRADO (LIMPIEZA) ---
   const borrarRegistroParqueadero = async (id) => {
     const { isConfirmed } = await Swal.fire({
       title: '¿Borrar ingreso?',
@@ -202,19 +207,82 @@ export default function AdminParqueadero({ copropiedadId }) {
   const guardasUnicos = Array.from(new Set(registrosConGuarda.filter(r => r.cedula_guarda !== 'N/A').map(r => r.cedula_guarda)))
     .map(cedula => registrosConGuarda.find(r => r.cedula_guarda === cedula));
 
-  const registrosFiltrados = filtroGuarda 
+  const registrosFiltradosArqueo = filtroGuarda 
     ? registrosConGuarda.filter(r => r.cedula_guarda === filtroGuarda)
     : registrosConGuarda;
 
-  const registrosPagados = registrosFiltrados.filter(r => r.estado === 'Pagado');
+  const registrosPagados = registrosFiltradosArqueo.filter(r => r.estado === 'Pagado');
   
-  // NUEVA MATEMÁTICA DESGLOSADA PARA EL CONTADOR
   const totalRecaudado = registrosPagados.reduce((suma, r) => suma + Number(r.valor_total || 0), 0);
   const totalNeto = registrosPagados.reduce((suma, r) => suma + Number(r.valor_neto || 0), 0);
   const totalIva = registrosPagados.reduce((suma, r) => suma + Number(r.valor_iva || 0), 0);
 
-  // Turnos cerrados para la tabla
   const turnosInactivos = historialTurnos.filter(t => t.estado !== 'Activo');
+
+  // 🔥 LÓGICA PARA HISTORIAL DE VISITANTES 🔥
+  const registrosHistorialFiltrados = registros.filter(r => {
+    // Filtrar por Inmueble
+    if (filtroInmuebleHistorial && !r.inmueble.toLowerCase().includes(filtroInmuebleHistorial.toLowerCase())) {
+      return false;
+    }
+    
+    // Filtrar por Fechas (usando hora_entrada como referencia)
+    if (filtroFechaInicio || filtroFechaFin) {
+      const fechaRegistro = new Date(r.hora_entrada);
+      
+      if (filtroFechaInicio) {
+        const inicio = new Date(filtroFechaInicio);
+        inicio.setHours(0, 0, 0, 0); // Ajustar al principio del día
+        if (fechaRegistro < inicio) return false;
+      }
+      
+      if (filtroFechaFin) {
+        const fin = new Date(filtroFechaFin);
+        fin.setHours(23, 59, 59, 999); // Ajustar al final del día
+        if (fechaRegistro > fin) return false;
+      }
+    }
+    
+    return true;
+  });
+
+  const exportarHistorialExcel = () => {
+    if (registrosHistorialFiltrados.length === 0) {
+      return Swal.fire('Atención', 'No hay datos para exportar con los filtros actuales.', 'warning');
+    }
+
+    const datosFormateados = registrosHistorialFiltrados.map(r => ({
+      'Inmueble': r.inmueble,
+      'Placa': r.placa,
+      'Tipo Vehículo': r.tipo_vehiculo,
+      'Visitante': r.nombre_visitante || 'No registrado',
+      'Cédula': r.cedula_visitante || 'No registrada',
+      'Hora Entrada': r.hora_entrada ? new Date(r.hora_entrada).toLocaleString() : 'N/A',
+      'Hora Salida': r.hora_salida ? new Date(r.hora_salida).toLocaleString() : 'Aún adentro',
+      'Estado': r.estado,
+      'Valor Cobrado': r.valor_total ? `$${r.valor_total.toLocaleString()}` : '$0'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(datosFormateados);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Historial_Visitantes");
+    
+    // Ajustar el ancho de las columnas
+    const columnWidths = [
+      { wch: 15 }, // Inmueble
+      { wch: 15 }, // Placa
+      { wch: 15 }, // Tipo Vehículo
+      { wch: 25 }, // Visitante
+      { wch: 15 }, // Cédula
+      { wch: 20 }, // Hora Entrada
+      { wch: 20 }, // Hora Salida
+      { wch: 12 }, // Estado
+      { wch: 15 }  // Valor Cobrado
+    ];
+    worksheet['!cols'] = columnWidths;
+
+    XLSX.writeFile(workbook, `Historial_Parqueadero_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   if (cargando) return <div className="p-10 text-center text-gray-500 font-bold">Cargando módulo de control...</div>;
 
@@ -227,6 +295,8 @@ export default function AdminParqueadero({ copropiedadId }) {
         <button onClick={() => setPestanaActiva('arqueo')} className={`px-4 py-2 font-semibold rounded-t-lg whitespace-nowrap ${pestanaActiva === 'arqueo' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}>Arqueo de Caja</button>
         <button onClick={() => setPestanaActiva('tarifas')} className={`px-4 py-2 font-semibold rounded-t-lg whitespace-nowrap ${pestanaActiva === 'tarifas' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}>Tarifas e Impuestos</button>
         <button onClick={() => setPestanaActiva('vigilantes')} className={`px-4 py-2 font-semibold rounded-t-lg whitespace-nowrap ${pestanaActiva === 'vigilantes' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}>Guardas y Turnos</button>
+        {/* 🔥 NUEVA PESTAÑA 🔥 */}
+        <button onClick={() => setPestanaActiva('historial_visitas')} className={`px-4 py-2 font-semibold rounded-t-lg whitespace-nowrap ${pestanaActiva === 'historial_visitas' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}>Historial Visitantes</button>
       </div>
 
       {/* PESTAÑA: ARQUEO DE CAJA */}
@@ -247,7 +317,6 @@ export default function AdminParqueadero({ copropiedadId }) {
                 ))}
               </select>
 
-              {/* NUEVO RECUADRO PARA EL CONTADOR (DESGLOSADO) */}
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl shadow-sm min-w-[280px] w-full sm:w-auto">
                 <div className="flex justify-between text-sm text-emerald-800 mb-1">
                   <span>Subtotal (Neto):</span>
@@ -278,7 +347,7 @@ export default function AdminParqueadero({ copropiedadId }) {
                 </tr>
               </thead>
               <tbody className="text-gray-600 text-sm">
-                {registrosFiltrados.map((reg) => (
+                {registrosFiltradosArqueo.map((reg) => (
                   <tr key={reg.id} className="border-b hover:bg-gray-50">
                     <td className="py-3 px-4">
                       <span className="font-bold text-lg">{reg.placa}</span><br/>
@@ -312,7 +381,7 @@ export default function AdminParqueadero({ copropiedadId }) {
                     </td>
                   </tr>
                 ))}
-                {registrosFiltrados.length === 0 && (
+                {registrosFiltradosArqueo.length === 0 && (
                   <tr><td colSpan="6" className="text-center py-8 text-gray-500">No hay registros para mostrar.</td></tr>
                 )}
               </tbody>
@@ -470,7 +539,125 @@ export default function AdminParqueadero({ copropiedadId }) {
               </table>
             </div>
           </div>
+        </div>
+      )}
 
+      {/* 🔥 PESTAÑA: HISTORIAL VISITANTES 🔥 */}
+      {pestanaActiva === 'historial_visitas' && (
+        <div className="bg-white p-6 rounded-xl shadow-md border-t-4 border-emerald-500">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Historial Detallado de Visitantes</h2>
+              <p className="text-sm text-gray-500 mt-1">Filtra y exporta la información para cobros administrativos.</p>
+            </div>
+            
+            <button 
+              onClick={exportarHistorialExcel}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-sm transition-colors flex items-center gap-2"
+            >
+              <span>📊</span> Exportar a Excel
+            </button>
+          </div>
+          
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
+            <h3 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wider">Filtros de Búsqueda</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Inmueble</label>
+                <input 
+                  type="text" 
+                  value={filtroInmuebleHistorial}
+                  onChange={(e) => setFiltroInmuebleHistorial(e.target.value)}
+                  placeholder="Ej: 101, Torre 2..."
+                  className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-emerald-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Fecha Ingreso (Desde)</label>
+                <input 
+                  type="date" 
+                  value={filtroFechaInicio}
+                  onChange={(e) => setFiltroFechaInicio(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-emerald-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Fecha Ingreso (Hasta)</label>
+                <input 
+                  type="date" 
+                  value={filtroFechaFin}
+                  onChange={(e) => setFiltroFechaFin(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-emerald-500 text-sm"
+                />
+              </div>
+            </div>
+            
+            <div className="mt-4 flex justify-end">
+              <button 
+                onClick={() => { setFiltroInmuebleHistorial(''); setFiltroFechaInicio(''); setFiltroFechaFin(''); }}
+                className="text-xs text-slate-500 hover:text-slate-700 underline font-semibold"
+              >
+                Limpiar Filtros
+              </button>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-slate-800 text-white z-10">
+                <tr className="text-xs uppercase tracking-wider">
+                  <th className="py-3 px-4 font-semibold">Inmueble</th>
+                  <th className="py-3 px-4 font-semibold">Vehículo / Placa</th>
+                  <th className="py-3 px-4 font-semibold">Visitante</th>
+                  <th className="py-3 px-4 font-semibold">Ingreso</th>
+                  <th className="py-3 px-4 font-semibold">Salida</th>
+                  <th className="py-3 px-4 font-semibold text-center">Estado</th>
+                  <th className="py-3 px-4 font-semibold text-right">Cobrado</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm divide-y divide-slate-100">
+                {registrosHistorialFiltrados.length > 0 ? (
+                  registrosHistorialFiltrados.map((reg) => (
+                    <tr key={reg.id} className="hover:bg-slate-50">
+                      <td className="py-3 px-4 font-bold text-slate-700">{reg.inmueble}</td>
+                      <td className="py-3 px-4">
+                        <span className="font-black text-slate-800">{reg.placa}</span>
+                        <span className="text-xs text-slate-400 block">{reg.tipo_vehiculo}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-semibold">{reg.nombre_visitante || 'N/A'}</span>
+                        <span className="text-xs text-slate-400 block">CC: {reg.cedula_visitante || 'N/A'}</span>
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-600">
+                        {new Date(reg.hora_entrada).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-600">
+                        {reg.hora_salida ? new Date(reg.hora_salida).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : <span className="text-slate-400 italic">Adentro</span>}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${reg.estado === 'Pagado' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                          {reg.estado}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-emerald-600">
+                        {reg.valor_total ? `$${reg.valor_total.toLocaleString()}` : '$0'}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="7" className="py-8 text-center text-slate-400">
+                      No se encontraron registros con los filtros aplicados.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="mt-4 text-right text-xs text-slate-500 font-semibold">
+            Total registros listados: {registrosHistorialFiltrados.length}
+          </div>
         </div>
       )}
 
