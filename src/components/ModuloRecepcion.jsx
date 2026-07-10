@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '../supabase';
 import Webcam from 'react-webcam';
 import Swal from 'sweetalert2';
+import { generarCascaronHTML } from '../utils/plantillas'; // 🔥 1. IMPORTAMOS NUESTRA FÁBRICA DE DISEÑO HTML
 
 export default function ModuloRecepcion({ turno }) {
   const [pestana, setPestana] = useState('registro'); 
@@ -23,7 +24,7 @@ export default function ModuloRecepcion({ turno }) {
   const [paquetesPendientes, setPaquetesPendientes] = useState([]);
   const [paquetesEntregados, setPaquetesEntregados] = useState([]);
 
-  // 🔥 NUEVO: Estado para abrir la tarjeta de "Ver detalle" 🔥
+  // Estado para abrir la tarjeta de "Ver detalle"
   const [paqueteDetalle, setPaqueteDetalle] = useState(null);
 
   // Estados para el Modal de Entrega Fotográfica
@@ -113,61 +114,108 @@ export default function ModuloRecepcion({ turno }) {
         }]);
 
       if (dbError) throw dbError;
-      
-      Swal.fire({ title: '¡Registrado!', text: `Se registró correctamente.`, icon: 'success', timer: 2000 });
-      
-      // 🔥 AQUÍ DISPARAMOS LA NOTIFICACIÓN 🔥
-      // Primero buscamos al dueño del inmueble y luego disparamos
-      const icono = tipoRegistro === 'Visitante' ? '🚶‍♂️' : '📦';
-      enviarNotificacion(inmueble, "Nueva Notificación", `${icono} Tienes un nuevo ${tipoRegistro} en portería.`);  
-      
-      // ==========================================
-      // 🚀 AVISO AL CORREO DEL RESIDENTE VÍA RESEND
-      // ==========================================
-      supabase.from('usuarios')
-        .select('email')
-        .eq('copropiedad_id', idConjunto)
-        .ilike('inmueble', inmueble.trim())
-        .then(({ data: residentes }) => {
-          if (residentes && residentes.length > 0) {
-            const correos = residentes.map(r => r.email);
-            const icono = tipoRegistro === 'Visitante' ? '🚶‍♂️' : tipoRegistro === 'Paquete' ? '📦' : '🍔';
-            const asunto = `${icono} Novedad en Portería: Nuevo ${tipoRegistro}`;
-            const htmlMensaje = `
-              <div style="font-family: Arial, sans-serif; padding: 20px; max-w: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px;">
-                <h2 style="color: #4f46e5; text-align: center;">Notificación de Portería ${icono}</h2>
-                <p>Hola, te informamos que acaba de registrarse un nuevo ingreso dirigido a tu inmueble (<b>${inmueble.trim()}</b>).</p>
-                <table style="width: 100%; border-collapse: collapse; margin-top: 20px; background-color: #f8fafc;">
-                  <tr>
-                    <td style="padding: 10px; border: 1px solid #e2e8f0;"><b>Tipo:</b></td>
-                    <td style="padding: 10px; border: 1px solid #e2e8f0;">${tipoRegistro}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px; border: 1px solid #e2e8f0;"><b>Nombre / Empresa:</b></td>
-                    <td style="padding: 10px; border: 1px solid #e2e8f0;">${nombre.trim().toUpperCase()}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px; border: 1px solid #e2e8f0;"><b>Observaciones del Guarda:</b></td>
-                    <td style="padding: 10px; border: 1px solid #e2e8f0;">${observaciones.trim() || 'Sin novedades'}</td>
-                  </tr>
-                </table>
-                <p style="text-align: center; margin-top: 30px; font-size: 12px; color: #94a3b8;">
-                  Este es un mensaje automático de tu sistema de seguridad LumenGroup.
-                </p>
-              </div>
-            `;
-            supabase.functions.invoke('resend-correo', {
-              body: { bcc: correos, asunto: asunto, mensaje: htmlMensaje }
-            });
-          }
-        });
-      // ==========================================
 
+      // =========================================================================
+      // 🔥 2. SUBSISTEMA DE NOTIFICACIONES INTELIGENTES (RECEPCIÓN) 🔥
+      // =========================================================================
+      try {
+        // Buscamos los perfiles de residentes asociados a este inmueble y conjunto
+        const { data: residentes } = await supabase
+          .from('usuarios')
+          .select('id, nombre, email')
+          .eq('copropiedad_id', idConjunto)
+          .ilike('inmueble', inmueble.trim());
+
+        if (residentes && residentes.length > 0) {
+          // Clasificamos el tipo de evento según la estructura de nuestro diccionario
+          const tipoEvento = tipoRegistro === 'Paquete' ? 'PAQUETERIA' : 'VISITANTES';
+
+          // Consultamos si el administrador configuró plantillas personalizadas en el panel
+          const { data: plantillasActivas } = await supabase
+            .from('plantillas_notificaciones')
+            .select('*')
+            .eq('copropiedad_id', idConjunto)
+            .eq('tipo_evento', tipoEvento)
+            .eq('modulo_activo', true);
+
+          const plantillaEmail = plantillasActivas?.find(p => p.canal === 'email');
+          const plantillaPush = plantillasActivas?.find(p => p.canal === 'push');
+
+          const fechaActual = new Date().toLocaleDateString('es-CO');
+          const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+          // Notificamos individualmente a cada miembro del apartamento
+          for (const residente of residentes) {
+            
+            const reemplazarVariables = (texto) => {
+              if (!texto) return '';
+              return texto
+                .replace(/{nombre}/g, residente.nombre || 'Residente')
+                .replace(/{inmueble}/g, inmueble.trim())
+                .replace(/{transportadora}/g, nombre.trim().toUpperCase())
+                .replace(/{nombre_visitante}/g, nombre.trim().toUpperCase())
+                .replace(/{fecha}/g, fechaActual)
+                .replace(/{hora}/g, horaActual);
+            };
+
+            // 📦 REGLA A: SI ES UN PAQUETE DISPARAMOS MAIL + PUSH
+            if (tipoRegistro === 'Paquete') {
+              // 1. Envío del Correo Electrónico Corporativo
+              if (residente.email) {
+                const asuntoEmail = plantillaEmail ? reemplazarVariables(plantillaEmail.asunto) : '📦 Recepción de correspondencia en portería';
+                const remitenteEmail = plantillaEmail?.nombre_remitente || 'Portería y Control de Acceso';
+                const textoBaseEmail = plantillaEmail 
+                  ? reemplazarVariables(plantillaEmail.mensaje_base) 
+                  : `Hola ${residente.nombre || 'Residente'},\n\nTe informamos que ha llegado una encomienda/paquete de la empresa ${nombre.trim().toUpperCase()} dirigida a tu inmueble.\n\nDetalles del reporte: ${observaciones.trim() || 'Sin anotaciones adicionales.'}`;
+                
+                const htmlFinal = generarCascaronHTML(asuntoEmail, textoBaseEmail);
+
+                await supabase.functions.invoke('enviar_correo', {
+                  body: {
+                    targetEmails: [residente.email],
+                    payload: { titulo: asuntoEmail, html: htmlFinal, nombre_remitente: remitenteEmail }
+                  }
+                });
+              }
+
+              // 2. Envío de Notificación Push
+              if (residente.id) {
+                const tituloPush = plantillaPush ? reemplazarVariables(plantillaPush.asunto) : '📦 Nuevo Paquete Recibido';
+                const mensajePush = plantillaPush ? reemplazarVariables(plantillaPush.mensaje_base) : `Tienes correspondencia de ${nombre.trim().toUpperCase()} lista para reclamar.`;
+
+                await supabase.functions.invoke('enviar_push', {
+                  body: { titulo: tituloPush, mensaje: mensajePush, copropiedadId: idConjunto, targetUserId: residente.id }
+                });
+              }
+            } 
+            // 🚶‍♂️/🍔 REGLA B: SI ES VISITANTE O DOMICILIO SOLO SE DISPARA PUSH
+            else if (tipoRegistro === 'Visitante' || tipoRegistro === 'Domicilio') {
+              if (residente.id) {
+                const icono = tipoRegistro === 'Visitante' ? '🚶‍♂️' : '🍔';
+                const tituloPush = plantillaPush ? reemplazarVariables(plantillaPush.asunto) : `${icono} Control de Acceso: ${tipoRegistro}`;
+                const mensajePush = plantillaPush 
+                  ? reemplazarVariables(plantillaPush.mensaje_base) 
+                  : `Se autorizó el ingreso de: ${nombre.trim().toUpperCase()} hacia tu inmueble.`;
+
+                await supabase.functions.invoke('enviar_push', {
+                  body: { titulo: tituloPush, mensaje: mensajePush, copropiedadId: idConjunto, targetUserId: residente.id }
+                });
+              }
+            }
+
+          }
+        }
+      } catch (notifError) {
+        console.error("Error silencioso mitigado en el subsistema de mensajería de recepción:", notifError);
+      }
+      // =========================================================================
+
+      Swal.fire({ title: '¡Registrado!', text: `Se registró correctamente y se notificó al inmueble.`, icon: 'success', timer: 2000 });
       setInmueble(''); setNombre(''); setCedula(''); setObservaciones('');
       setFotoRecortada(null); setFotoExistente(null);
     } catch (error) {
       console.error(error);
-      Swal.fire('Error', 'Hubo un problema al guardar.', 'error');
+      Swal.fire('Error', 'Hubo un problema al guardar el registro en el servidor.', 'error');
     } finally {
       setCargando(false);
     }
@@ -205,6 +253,9 @@ export default function ModuloRecepcion({ turno }) {
 
   const confirmarEntrega = async () => {
     if (!fotoEntrega) return Swal.fire('Atención', 'Debes tomar la foto a la persona que recibe.', 'warning');
+    const { isConfirmed } = await Swal.fire({ title: '¿Confirmar Entrega?', text: 'Se guardará la evidencia fotográfica y se cerrará el pendiente.', icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, Entregar', confirmButtonColor: '#10b981' });
+    if (!isConfirmed) return;
+
     setCargandoEntrega(true);
 
     try {
@@ -247,7 +298,7 @@ export default function ModuloRecepcion({ turno }) {
       {/* MENÚ DE PESTAÑAS */}
       <div className="flex gap-2 mb-4 bg-white p-2 rounded-2xl shadow-sm w-max overflow-x-auto">
         <button onClick={() => setPestana('registro')} className={`px-6 py-3 font-bold rounded-xl transition whitespace-nowrap ${pestana === 'registro' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>📝 Nuevo Registro</button>
-        <button onClick={() => setPestana('entregas')} className={`px-6 py-3 font-bold rounded-xl transition whitespace-nowrap ${pestana === 'entregas' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>📦 Pendientes</button>
+        <button onClick={() => setPestana('entregas')} className={`px-6 py-3 font-bold rounded-xl transition whitespace-nowrap ${pestana === 'entregas' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>📦 Pendientes ({paquetesPendientes.length})</button>
         <button onClick={() => setPestana('historial')} className={`px-6 py-3 font-bold rounded-xl transition whitespace-nowrap ${pestana === 'historial' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>✅ Historial Entregados</button>
       </div>
 
@@ -316,7 +367,7 @@ export default function ModuloRecepcion({ turno }) {
         </div>
       )}
 
-      {/* 🔥 PESTAÑA 2: ENTREGAS PENDIENTES (AHORA EN TABLA) 🔥 */}
+      {/* PESTAÑA 2: ENTREGAS PENDIENTES */}
       {pestana === 'entregas' && (
         <div className="bg-white p-6 rounded-2xl shadow-xl animate-in fade-in">
           <div className="flex justify-between items-center mb-6 border-b pb-4">
@@ -373,7 +424,7 @@ export default function ModuloRecepcion({ turno }) {
         </div>
       )}
 
-      {/* 🔥 PESTAÑA 3: HISTORIAL DE ENTREGAS (AHORA EN TABLA) 🔥 */}
+      {/* PESTAÑA 3: HISTORIAL DE ENTREGAS */}
       {pestana === 'historial' && (
         <div className="bg-white p-6 rounded-2xl shadow-xl animate-in fade-in">
           <div className="flex justify-between items-center mb-6 border-b pb-4">
@@ -430,30 +481,16 @@ export default function ModuloRecepcion({ turno }) {
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* 🔥 NUEVO MODAL: "VER DETALLE" (Para Pendientes e Historial) 🔥 */}
-      {/* ============================================================== */}
+      {/* MODAL: "VER DETALLE" */}
       {paqueteDetalle && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
           <div className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 relative flex flex-col">
+            <button onClick={() => setPaqueteDetalle(null)} className="absolute top-3 right-3 bg-black/50 text-white w-8 h-8 flex items-center justify-center rounded-full z-10 hover:bg-black/80 transition-colors font-black">X</button>
             
-            {/* Botón de cerrar Modal */}
-            <button 
-              onClick={() => setPaqueteDetalle(null)} 
-              className="absolute top-3 right-3 bg-black/50 text-white w-8 h-8 flex items-center justify-center rounded-full z-10 hover:bg-black/80 transition-colors font-black"
-            >
-              X
-            </button>
-            
-            {/* SI ESTÁ PENDIENTE (Muestra 1 foto y el botón verde de entregar) */}
             {paqueteDetalle.estado !== 'Entregado' ? (
               <>
                 <div className="h-56 bg-slate-100 relative">
-                  {paqueteDetalle.foto_url ? (
-                    <img src={paqueteDetalle.foto_url} alt="Paquete" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-5xl">📦</div>
-                  )}
+                  {paqueteDetalle.foto_url ? <img src={paqueteDetalle.foto_url} alt="Paquete" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-5xl">📦</div>}
                 </div>
                 <div className="p-6 flex flex-col">
                   <div className="flex justify-between items-start mb-3">
@@ -470,17 +507,10 @@ export default function ModuloRecepcion({ turno }) {
                     </div>
                   )}
                   
-                  {/* Este botón abre el modal de la cámara y cierra el modal de detalle */}
-                  <button 
-                    onClick={() => { setPaqueteAEntregar(paqueteDetalle); setPaqueteDetalle(null); }} 
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black text-lg py-4 mt-2 rounded-xl transition shadow-lg"
-                  >
-                    📸 Tomar Foto y Entregar
-                  </button>
+                  <button onClick={() => { setPaqueteAEntregar(paqueteDetalle); setPaqueteDetalle(null); }} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black text-lg py-4 mt-2 rounded-xl transition shadow-lg">📸 Tomar Foto y Entregar</button>
                 </div>
               </>
             ) : (
-              // SI ESTÁ ENTREGADO (Muestra las 2 fotos comparativas)
               <>
                 <div className="h-48 flex relative bg-slate-200">
                   <div className="w-1/2 h-full border-r border-slate-300 relative">
@@ -513,9 +543,7 @@ export default function ModuloRecepcion({ turno }) {
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* 🔥 MODAL DE CÁMARA PARA CONFIRMAR LA ENTREGA 🔥              */}
-      {/* ============================================================== */}
+      {/* MODAL DE CÁMARA PARA CONFIRMAR LA ENTREGA */}
       {paqueteAEntregar && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex justify-center items-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
@@ -542,20 +570,8 @@ export default function ModuloRecepcion({ turno }) {
                 )}
               </div>
               <div className="flex gap-3 w-full border-t border-slate-100 pt-6">
-                <button 
-                  onClick={() => { setPaqueteAEntregar(null); setFotoEntrega(null); }} 
-                  disabled={cargandoEntrega}
-                  className="flex-1 text-slate-500 font-bold py-3 hover:bg-slate-100 rounded-xl transition"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={confirmarEntrega}
-                  disabled={cargandoEntrega || !fotoEntrega}
-                  className={`flex-1 font-bold py-3 rounded-xl transition shadow-lg ${(!fotoEntrega || cargandoEntrega) ? 'bg-slate-300 text-slate-500' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}`}
-                >
-                  {cargandoEntrega ? 'Guardando...' : '✅ Entregar Paquete'}
-                </button>
+                <button onClick={() => { setPaqueteAEntregar(null); setFotoEntrega(null); }} disabled={cargandoEntrega} className="flex-1 text-slate-500 font-bold py-3 hover:bg-slate-100 rounded-xl transition">Cancelar</button>
+                <button onClick={confirmarEntrega} disabled={cargandoEntrega || !fotoEntrega} className={`flex-1 font-bold py-3 rounded-xl transition shadow-lg ${(!fotoEntrega || cargandoEntrega) ? 'bg-slate-300 text-slate-500' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}`}>{cargandoEntrega ? 'Guardando...' : '✅ Entregar Paquete'}</button>
               </div>
             </div>
           </div>

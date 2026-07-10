@@ -86,22 +86,42 @@ export default function NoticiasAdmin() {
 
       if (dbError) throw dbError;
 
-      // 🔥 3. NUEVO: LÓGICA DE NOTIFICACIONES PUSH 🔥
-      // Lo envolvemos en un try/catch para que si falla el push, no arroje error en la publicación de la noticia.
+          // 🔥 3. NUEVO: LÓGICA DE NOTIFICACIONES INTELIGENTES 🔥
       try {
-        await enviarNotificacionInteligente({
-          tipoEvento: 'nueva_noticia', // Este nombre debe coincidir con el que tengas en la base de datos de plantillas
-          copropiedadId: idConjunto,
-          userId: null, // Dejamos en null para que le llegue a TODO el conjunto
-          emailsDestino: [], 
-          datosDinamicos: { titulo_noticia: titulo, resumen_noticia: resumen }, // Pasamos variables por si la plantilla las usa
-          enviarMail: false, // Apagado para noticias
-          enviarPush: true   // Encendido para enviar alerta al celular
+        // A. Consultamos si el admin configuró una plantilla para 'nueva_noticia'
+        const { data: plantilla } = await supabase
+          .from('plantillas_notificaciones')
+          .select('*')
+          .eq('copropiedad_id', idConjunto)
+          .eq('tipo_evento', 'nueva_noticia') // Asegúrate que este sea el nombre en la BD
+          .eq('canal', 'push')
+          .eq('modulo_activo', true)
+          .maybeSingle();
+
+        // B. Definimos el mensaje final
+        let tituloPush = '📋 Nuevo Comunicado';
+        let mensajePush = `Hay una nueva noticia: ${titulo}`;
+
+        if (plantilla) {
+           // Si hay plantilla, reemplazamos las variables
+           tituloPush = plantilla.asunto.replace(/{titulo}/g, titulo).replace(/{resumen}/g, resumen);
+           mensajePush = plantilla.mensaje_base.replace(/{titulo}/g, titulo).replace(/{resumen}/g, resumen);
+        }
+
+        // C. Disparamos la notificación
+        await supabase.functions.invoke('enviar_push', {
+          body: {
+            titulo: tituloPush,
+            mensaje: mensajePush,
+            copropiedadId: idConjunto
+          }
         });
+        
       } catch (pushError) {
-        console.error("Notificación Push falló pero la noticia se guardó:", pushError);
+        console.error("Error al enviar el Push del formulario:", pushError);
       }
       // 🔥 FIN LÓGICA NOTIFICACIONES 🔥
+     
 
       Swal.fire('¡Éxito!', 'La noticia ha sido publicada en la cartelera digital.', 'success');
       

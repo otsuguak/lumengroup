@@ -4,6 +4,7 @@ import Swal from 'sweetalert2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import * as XLSX from 'xlsx';
+import { generarCascaronHTML } from '../utils/plantillas'; // 🔥 1. IMPORTAMOS NUESTRA FÁBRICA
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -12,24 +13,22 @@ const formatearCodigo = (codigo) => {
   return `TKT-${String(codigo).padStart(5, '0')}`;
 };
 
-// 🔥 NUEVA FUNCIÓN MEJORADA: Toma la fecha de vencimiento real de la BD 🔥
+// 🔥 FUNCIÓN MEJORADA: Toma la fecha de vencimiento real de la BD
 const calcularSLA = (fechaVencimiento, estado) => {
   if (estado === 'Cerrado' || estado === 'Resuelto') {
     return { texto: 'Completado', color: 'bg-slate-100 text-slate-500 border border-slate-200', alerta: '🏁' };
   }
   
   if (!fechaVencimiento) {
-    // Paracaídas por si hay tickets viejos sin fecha de vencimiento calculada
     return { texto: 'Sin Fecha', color: 'bg-slate-50 text-slate-500 border border-slate-200', alerta: '⚪' };
   }
 
   const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0); // Normalizamos "hoy" a la medianoche para evitar líos con las horas
+  hoy.setHours(0, 0, 0, 0); 
 
   const vencimiento = new Date(fechaVencimiento);
-  vencimiento.setHours(0, 0, 0, 0); // Normalizamos a la medianoche
+  vencimiento.setHours(0, 0, 0, 0); 
 
-  // Diferencia en milisegundos convertida a días
   const diffTime = vencimiento - hoy;
   const diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   
@@ -38,8 +37,6 @@ const calcularSLA = (fechaVencimiento, estado) => {
   return { texto: 'A Tiempo', color: 'bg-emerald-50 text-emerald-600 border border-emerald-200', alerta: '✅' };
 };
 
-
-// ✅ IMPORTANTE: Recibimos { permisos } del componente padre
 export default function DashboardAdmin({ permisos }) {
   const [usuarioActual, setUsuarioActual] = useState(null);
   const [ticketsGlobales, setTicketsGlobales] = useState([]);
@@ -50,7 +47,7 @@ export default function DashboardAdmin({ permisos }) {
   const [filtroUsuario, setFiltroUsuario] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroInmueble, setFiltroInmueble] = useState('');
-  const [filtroSla, setFiltroSla] = useState(''); // 🔥 FILTRO SLA MANTENIDO
+  const [filtroSla, setFiltroSla] = useState(''); 
 
   const [ticketSeleccionado, setTicketSeleccionado] = useState(null);
   const [gestionEstado, setGestionEstado] = useState('');
@@ -80,7 +77,6 @@ export default function DashboardAdmin({ permisos }) {
     try {
       let query = supabase.from('tickets').select('*').order('created_at', { ascending: false });
       
-      // Filtramos por conjunto si no es el SuperAdmin (agente)
       if (user.rol !== 'agente') {
         query = query.or(`usuario_id.eq.${user.id},asignado_a.eq.${user.id}`);
       } else {
@@ -119,7 +115,6 @@ export default function DashboardAdmin({ permisos }) {
     }
   };
 
-  // 🔥 Filtro Avanzado 🔥
   const ticketsFiltrados = useMemo(() => {
     return ticketsGlobales.filter(t => {
       const coincideEstado = filtroEstado === '' || t.estado.toLowerCase() === filtroEstado.toLowerCase();
@@ -127,7 +122,6 @@ export default function DashboardAdmin({ permisos }) {
       const coincideTipo = filtroTipo === '' || (t.categoria || '').toLowerCase() === filtroTipo.toLowerCase();
       const coincideInmueble = filtroInmueble === '' || (t.inmueble || '').toLowerCase().includes(filtroInmueble.toLowerCase());
       
-      // Le pasamos la fecha_vencimiento de tu base de datos
       const sla = calcularSLA(t.fecha_vencimiento, t.estado);
       const coincideSla = filtroSla === '' || sla.texto === filtroSla;
 
@@ -135,7 +129,6 @@ export default function DashboardAdmin({ permisos }) {
     });
   }, [ticketsGlobales, filtroEstado, filtroUsuario, filtroTipo, filtroInmueble, filtroSla]);
 
-  // 🔥 Contadores Actualizados 🔥
   const stats = useMemo(() => {
     let abiertos = 0; let proceso = 0; let escalados = 0; let cerrados = 0;
     ticketsGlobales.forEach(t => {
@@ -160,7 +153,7 @@ export default function DashboardAdmin({ permisos }) {
   const exportarExcel = () => {
     if (ticketsGlobales.length === 0) return Swal.fire('Sin datos', 'No hay casos para exportar.', 'warning');
     const datosParaExcel = ticketsGlobales.map(t => {
-      const sla = calcularSLA(t.fecha_vencimiento, t.estado); // Usando fecha_vencimiento aquí
+      const sla = calcularSLA(t.fecha_vencimiento, t.estado); 
       return {
         'ID Caso': formatearCodigo(t.codigo_ticket),
         'Fecha Radicado': new Date(t.created_at).toLocaleDateString(),
@@ -251,8 +244,72 @@ export default function DashboardAdmin({ permisos }) {
       
       const { error } = await supabase.from('tickets').update(updateData).eq('id', ticketSeleccionado.id);
       if (error) throw error;
-      
-      Swal.fire('Gestión Guardada', 'El caso ha sido actualizado exitosamente.', 'success');
+
+      // =========================================================================
+      // 🔥 2. MAGIA DE NOTIFICACIONES SAAS (PQRS) 🔥
+      // =========================================================================
+      try {
+        const emailDestino = ticketSeleccionado.email;
+        const targetUserId = ticketSeleccionado.usuario_id;
+        const numeroTicketFormat = formatearCodigo(ticketSeleccionado.codigo_ticket);
+
+        if (emailDestino || targetUserId) {
+          // Buscamos si el admin configuró plantillas para 'PQRS'
+          const { data: plantillasActivas } = await supabase
+            .from('plantillas_notificaciones')
+            .select('*')
+            .eq('copropiedad_id', usuarioActual.copropiedad_id)
+            .eq('tipo_evento', 'PQRS')
+            .eq('modulo_activo', true);
+
+          const plantillaEmail = plantillasActivas?.find(p => p.canal === 'email');
+          const plantillaPush = plantillasActivas?.find(p => p.canal === 'push');
+
+          const reemplazarVariables = (texto) => {
+            if (!texto) return '';
+            return texto
+              .replace(/{nombre}/g, ticketSeleccionado.nombre_usuario || 'Residente')
+              .replace(/{inmueble}/g, ticketSeleccionado.inmueble || 'S/N')
+              .replace(/{numero_ticket}/g, numeroTicketFormat)
+              .replace(/{estado}/g, gestionEstado);
+          };
+
+          // ✉️ ENVIAR CORREO (Solo si hay un email válido)
+          if (emailDestino) {
+            const asuntoEmail = plantillaEmail ? reemplazarVariables(plantillaEmail.asunto) : `🛠️ Actualización de Ticket ${numeroTicketFormat}`;
+            const remitenteEmail = plantillaEmail?.nombre_remitente || 'Atención al Residente';
+            const textoBaseEmail = plantillaEmail 
+              ? reemplazarVariables(plantillaEmail.mensaje_base) 
+              : `Hola ${ticketSeleccionado.nombre_usuario},\n\nTu solicitud (Ticket ${numeroTicketFormat}) tiene una nueva actualización.\n\nEstado actual: ${gestionEstado}\nMensaje de administración: ${gestionNotas.trim() || 'Ver detalles en plataforma.'}`;
+            
+            const htmlFinal = generarCascaronHTML(asuntoEmail, textoBaseEmail);
+
+            await supabase.functions.invoke('enviar_correo', {
+              body: {
+                targetEmails: [emailDestino],
+                payload: { titulo: asuntoEmail, html: htmlFinal, nombre_remitente: remitenteEmail }
+              }
+            });
+          }
+
+          // 📱 ENVIAR PUSH
+          if (targetUserId) {
+            const tituloPush = plantillaPush ? reemplazarVariables(plantillaPush.asunto) : `Ticket ${numeroTicketFormat} Actualizado`;
+            const mensajePush = plantillaPush 
+              ? reemplazarVariables(plantillaPush.mensaje_base) 
+              : `El estado de tu ticket ahora es: ${gestionEstado}.`;
+
+            await supabase.functions.invoke('enviar_push', {
+              body: { titulo: tituloPush, mensaje: mensajePush, copropiedadId: usuarioActual.copropiedad_id, targetUserId: targetUserId }
+            });
+          }
+        }
+      } catch (notifError) {
+        console.error("Error silencioso en notificaciones PQRS:", notifError);
+      }
+      // =========================================================================
+
+      Swal.fire('Gestión Guardada', 'El caso ha sido actualizado y el residente notificado.', 'success');
       setTicketSeleccionado(null);
     } catch (e) {
       console.error(e);
@@ -317,7 +374,6 @@ export default function DashboardAdmin({ permisos }) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
           
-          {/* 🔥 5 FILTROS INCLUYENDO EL DE TIEMPOS DE LEY 🔥 */}
           <div className="p-6 bg-slate-50/50 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <input type="text" placeholder="Buscar residente..." value={filtroUsuario} onChange={e => setFiltroUsuario(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" />
             
@@ -368,7 +424,6 @@ export default function DashboardAdmin({ permisos }) {
                   if (t.estado === 'Escalado') badge = 'bg-purple-50 text-purple-700 border border-purple-200';
                   if (t.estado === 'Resuelto' || t.estado === 'Cerrado') badge = 'bg-emerald-50 text-emerald-600 border border-emerald-100';
                   
-                  // 🔥 CÁLCULO DE COLORES SLA EN TIEMPO REAL CON LA FECHA DE LA BD 🔥
                   const slaInfo = calcularSLA(t.fecha_vencimiento, t.estado);
 
                   return (
@@ -377,7 +432,6 @@ export default function DashboardAdmin({ permisos }) {
                       <td className="p-4">
                         <div className="flex flex-col gap-1 items-start">
                           <span className={`px-2 py-1 rounded-lg font-bold ${badge}`}>{t.estado}</span>
-                          {/* ETIQUETA ROJA/NARANJA/VERDE DE TIEMPOS */}
                           <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest ${slaInfo.color}`}>
                             {slaInfo.alerta} {slaInfo.texto}
                           </span>

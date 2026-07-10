@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import Swal from 'sweetalert2';
-import emailjs from '@emailjs/browser';
+import { generarCascaronHTML } from '../utils/plantillas'; // 🔥 1. IMPORTAMOS NUESTRA FÁBRICA DE DISEÑO HTML
 
 export default function ReservasAdmin() {
   const [reservas, setReservas] = useState([]);
@@ -12,7 +12,6 @@ export default function ReservasAdmin() {
   const [fechaSeleccionada, setFechaSeleccionada] = useState(null);
 
   useEffect(() => {
-    emailjs.init("hWOGPxekMX4ceP4AZ"); 
     cargarDatos();
   }, []);
 
@@ -40,8 +39,9 @@ export default function ReservasAdmin() {
     }
   };
 
-  const gestionarReserva = async (id, nuevoEstado, email, zona) => {
+  const gestionarReserva = async (id, nuevoEstado, email, zona, fechaReserva, horaReserva) => {
     let motivo = "";
+    const copropiedadId = sessionStorage.getItem('copropiedad_id');
     
     if (nuevoEstado === 'Rechazada') {
       const { value: text, isConfirmed } = await Swal.fire({
@@ -59,7 +59,7 @@ export default function ReservasAdmin() {
     } else {
       const { isConfirmed } = await Swal.fire({ 
         title: '¿Aprobar Reserva?', 
-        text: `Se enviará un correo de confirmación a ${email}`,
+        text: `Se notificará al residente vía correo electrónico y alerta push.`,
         icon: 'question', 
         showCancelButton: true, 
         confirmButtonText: 'Sí, Aprobar',
@@ -69,26 +69,90 @@ export default function ReservasAdmin() {
       motivo = "¡Tu reserva ha sido confirmada con éxito! Te esperamos en el horario solicitado.";
     }
 
-    Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    Swal.fire({ title: 'Procesando y Notificando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
     try {
-      await supabase.from('reservas').update({ 
+      // 1. Actualización del estado de la reserva en la Base de Datos
+      const { error: dbError } = await supabase.from('reservas').update({ 
         estado: nuevoEstado,
         motivo: motivo 
       }).eq('id', id);
-      
-      await emailjs.send('service_yy0gcdm', 'template_0kwz3ij', {
-        to_email: email, 
-        zona_reservada: zona, 
-        estado_reserva: nuevoEstado, 
-        mensaje_adicional: motivo
-      });
-      
-      Swal.fire('Gestión Exitosa', 'El residente ha sido notificado vía email.', 'success');
+
+      if (dbError) throw dbError;
+
+      // =========================================================================
+      // 🔥 2. MAGIA DE NOTIFICACIONES OMNICANAL SAAS (RESERVAS) 🔥
+      // =========================================================================
+      try {
+        // Buscamos al usuario en la base de datos para obtener su ID de emparejamiento push y su nombre real
+        const { data: usuario } = await supabase
+          .from('usuarios')
+          .select('id, nombre')
+          .eq('email', email)
+          .eq('copropiedad_id', copropiedadId)
+          .maybeSingle();
+
+        // Consultamos si existen plantillas parametrizadas por el administrador para 'RESERVAS'
+        const { data: plantillasActivas } = await supabase
+          .from('plantillas_notificaciones')
+          .select('*')
+          .eq('copropiedad_id', copropiedadId)
+          .eq('tipo_evento', 'RESERVAS')
+          .eq('modulo_activo', true);
+
+        const plantillaEmail = plantillasActivas?.find(p => p.canal === 'email');
+        const plantillaPush = plantillasActivas?.find(p => p.canal === 'push');
+
+        // Mapeo y reemplazo dinámico de etiquetas de combinación (Merge Tags)
+        const reemplazarVariables = (texto) => {
+          if (!texto) return '';
+          return texto
+            .replace(/{nombre}/g, usuario?.nombre || 'Residente')
+            .replace(/{inmueble}/g, res?.apto || 'S/N')
+            .replace(/{zona}/g, zona)
+            .replace(/{fecha}/g, fechaReserva)
+            .replace(/{hora}/g, horaReserva || 'Horario Solicitado')
+            .replace(/{estado}/g, nuevoEstado);
+        };
+
+        // ✉️ ENVÍO DE CORREO ELECTRÓNICO ELECTRÓNICO CORPORATIVO
+        const asuntoEmail = plantillaEmail ? reemplazarVariables(plantillaEmail.asunto) : `🎟️ Estado de tu Reserva: ${nuevoEstado}`;
+        const remitenteEmail = plantillaEmail?.nombre_remitente || 'Gestión de Áreas Comunes';
+        const textoBaseEmail = plantillaEmail 
+          ? reemplazarVariables(plantillaEmail.mensaje_base) 
+          : `Hola ${usuario?.nombre || 'Residente'},\n\nTe informamos que la solicitud de reserva para la zona: **${zona}** programada para el día **${fechaReserva}** ha sido cambiada a estado: **${nuevoEstado}**.\n\nObservaciones de la administración: ${motivo}`;
+        
+        const htmlFinal = generarCascaronHTML(asuntoEmail, textoBaseEmail);
+
+        await supabase.functions.invoke('enviar_correo', {
+          body: {
+            targetEmails: [email],
+            payload: { titulo: asuntoEmail, html: htmlFinal, nombre_remitente: remitenteEmail }
+          }
+        });
+
+        // 📱 ENVÍO DE ALERTA PUSH INDIVIDUAL AL DISPOSITIVO DEL RESIDENTE
+        if (usuario?.id) {
+          const tituloPush = plantillaPush ? reemplazarVariables(plantillaPush.asunto) : `🎟️ Reserva ${nuevoEstado}`;
+          const mensajePush = plantillaPush 
+            ? reemplazarVariables(plantillaPush.mensaje_base) 
+            : `Tu solicitud para el espacio: ${zona} ha sido ${nuevoEstado.toLowerCase()}.`;
+
+          await supabase.functions.invoke('enviar_push', {
+            body: { titulo: tituloPush, mensaje: mensajePush, copropiedadId: copropiedadId, targetUserId: usuario.id }
+          });
+        }
+
+      } catch (notifError) {
+        console.error("Error colateral procesando las notificaciones del módulo de reservas:", notifError);
+      }
+      // =========================================================================
+
+      Swal.fire('Gestión Exitosa', 'El estado ha sido modificado y el residente notificado por todos los canales.', 'success');
       cargarDatos();
     } catch (e) {
       console.error(e);
-      Swal.fire('Atención', 'Se actualizó la base de datos pero el correo no pudo enviarse.', 'warning');
+      Swal.fire('Error', 'Se produjo un error al actualizar la reserva en el servidor.', 'error');
       cargarDatos();
     }
   };
@@ -256,8 +320,8 @@ export default function ReservasAdmin() {
                       <td className="px-6 py-5 text-right space-x-2">
                         {res.estado === 'Pendiente' ? (
                           <>
-                            <button onClick={() => gestionarReserva(res.id, 'Aprobada', res.email, res.zona)} className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600 transition-all shadow-md">Aprobar</button>
-                            <button onClick={() => gestionarReserva(res.id, 'Rechazada', res.email, res.zona)} className="px-4 py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-600 transition-all shadow-md">Rechazar</button>
+                            <button onClick={() => gestionarReserva(res.id, 'Aprobada', res.email, res.zona, res.fecha, res.hora)} className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600 transition-all shadow-md">Aprobar</button>
+                            <button onClick={() => gestionarReserva(res.id, 'Rechazada', res.email, res.zona, res.fecha, res.hora)} className="px-4 py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-600 transition-all shadow-md">Rechazar</button>
                           </>
                         ) : (
                           <button onClick={() => borrarReserva(res.id)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center ml-auto">🗑️</button>

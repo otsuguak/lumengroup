@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import Swal from 'sweetalert2';
+import { generarCascaronHTML } from '../utils/plantillas'; // 🔥 IMPORTAMOS LA FÁBRICA DE DISEÑO
 
 export default function ComunicacionesAdmin() {
   const [usuarios, setUsuarios] = useState([]);
@@ -106,12 +107,16 @@ export default function ComunicacionesAdmin() {
         });
       }
 
+      // 🔥 MAGIA: Envolvemos el texto simple del administrador en el diseño de correo maestro
+      const htmlFinal = generarCascaronHTML(asunto, mensaje);
+
       // 🔌 AQUÍ LLAMAMOS A SUPABASE PARA QUE ÉL HABLE CON RESEND DE FORMA SEGURA
       const { data, error } = await supabase.functions.invoke('resend-correo', {
         body: {
-          bcc: seleccionados, // Le pasamos el array de correos seleccionados
+          bcc: seleccionados, 
           asunto: asunto,
-          mensaje: mensaje,
+          mensaje: htmlFinal, // Pasamos el HTML hermoso al backend
+          html: htmlFinal,    // Por si tu backend usa la variable html
           adjuntos: adjuntos
         }
       });
@@ -201,7 +206,10 @@ export default function ComunicacionesAdmin() {
           </div>
 
           <div className="space-y-1 flex-1 flex flex-col">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cuerpo del Correo</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex justify-between">
+              Cuerpo del Correo
+              <span className="text-purple-500 lowercase normal-case tracking-normal font-medium">Se aplicará diseño HTML corporativo automáticamente</span>
+            </label>
             <textarea 
               value={mensaje} 
               onChange={(e) => setMensaje(e.target.value)} 

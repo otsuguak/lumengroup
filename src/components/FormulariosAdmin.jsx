@@ -58,22 +58,25 @@ export default function FormulariosAdmin() {
       }]);
       if (error) throw error;
 
-      // 🔥 2. MAGIA: DISPARAMOS LA NOTIFICACIÓN PUSH 🔥
+      // =========================================================================
+      // 🔥 2. PUSH MASIVO AL CONJUNTO (MEGÁFONO SAAS) 🔥
+      // Al NO enviarle un 'targetUserId', el backend le dispara a todos los 
+      // residentes que pertenezcan a este copropiedadId específico.
+      // =========================================================================
       try {
         await supabase.functions.invoke('enviar_push', {
           body: {
-            titulo: '📋 Nueva Encuesta Disponible',
-            mensaje: `Participa ahora: ${nuevoForm.titulo}. ${nuevoForm.descripcion || ''}`,
+            titulo: `📋 Nueva Encuesta: ${nuevoForm.titulo}`,
+            mensaje: nuevoForm.descripcion ? `Participa ahora: ${nuevoForm.descripcion}` : 'Ingresa a la plataforma para diligenciar este nuevo formulario.',
             copropiedadId: copropiedadId
           }
         });
       } catch (pushError) {
-        console.error("Error al enviar el Push del formulario:", pushError);
-        // Nota: Si el push falla por algo, no bloqueamos al usuario, el formulario ya se guardó.
+        console.error("Error al enviar el Push masivo del formulario:", pushError);
       }
 
       // 3. Finalizamos con éxito
-      Swal.fire('¡Éxito!', 'Formulario publicado y notificado a los residentes.', 'success');
+      Swal.fire('¡Éxito!', 'Formulario publicado y notificado a todos los residentes.', 'success');
       setNuevoForm({ titulo: '', descripcion: '', iframe_url: '' });
       setMostrarModalEncuesta(false);
       cargarDatos(copropiedadId);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import Swal from 'sweetalert2';
+import { generarCascaronHTML } from '../utils/plantillas'; // 🔥 1. IMPORTAMOS NUESTRA FÁBRICA DE DISEÑO
 
 export default function GestionConvivencia() {
   const [cargando, setCargando] = useState(true);
@@ -57,7 +58,7 @@ export default function GestionConvivencia() {
       return Swal.fire('Faltan Datos', 'Selecciona un residente y escribe el motivo.', 'warning');
     }
 
-    Swal.fire({ title: 'Generando llamado...', text: evidenciaPdf ? 'Subiendo documento oficial...' : '', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    Swal.fire({ title: 'Generando y Notificando...', text: evidenciaPdf ? 'Subiendo documento oficial...' : '', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
     try {
       const residenteSeleccionado = listaUsuarios.find(u => u.id === nuevoLlamado.usuario_id);
@@ -83,7 +84,63 @@ export default function GestionConvivencia() {
 
       if (error) throw error;
 
-      Swal.fire('¡Enviado!', `El llamado de atención ha sido enviado al apartamento ${residenteSeleccionado.inmueble}.`, 'success');
+      // =========================================================================
+      // 🔥 2. MAGIA DE NOTIFICACIONES SAAS (CONVIVENCIA) 🔥
+      // =========================================================================
+      try {
+        // Buscamos si el admin configuró plantillas para 'CONVIVENCIA'
+        const { data: plantillasActivas } = await supabase
+          .from('plantillas_notificaciones')
+          .select('*')
+          .eq('copropiedad_id', copropiedadId)
+          .eq('tipo_evento', 'CONVIVENCIA')
+          .eq('modulo_activo', true);
+
+        const plantillaEmail = plantillasActivas?.find(p => p.canal === 'email');
+        const plantillaPush = plantillasActivas?.find(p => p.canal === 'push');
+
+        const reemplazarVariables = (texto) => {
+          if (!texto) return '';
+          return texto
+            .replace(/{nombre}/g, residenteSeleccionado.nombre || 'Residente')
+            .replace(/{inmueble}/g, residenteSeleccionado.inmueble || 'S/N')
+            .replace(/{motivo}/g, nuevoLlamado.motivo);
+        };
+
+        // ✉️ ENVIAR CORREO
+        if (residenteSeleccionado.email) {
+          const asuntoEmail = plantillaEmail ? reemplazarVariables(plantillaEmail.asunto) : '⚠️ Notificación de Convivencia';
+          const remitenteEmail = plantillaEmail?.nombre_remitente || 'Comité de Convivencia';
+          const textoBaseEmail = plantillaEmail 
+            ? reemplazarVariables(plantillaEmail.mensaje_base) 
+            : `Señor(a) residente del inmueble ${residenteSeleccionado.inmueble || 'S/N'},\n\nLa administración ha emitido un llamado de atención por el siguiente motivo:\n\n${nuevoLlamado.motivo}\n\nPor favor, revise la plataforma para ver los detalles y soportes (si aplican) y evitar futuras sanciones.`;
+          
+          const htmlFinal = generarCascaronHTML(asuntoEmail, textoBaseEmail);
+
+          await supabase.functions.invoke('enviar_correo', {
+            body: {
+              targetEmails: [residenteSeleccionado.email],
+              payload: { titulo: asuntoEmail, html: htmlFinal, nombre_remitente: remitenteEmail }
+            }
+          });
+        }
+
+        // 📱 ENVIAR PUSH INDIVIDUAL
+        const tituloPush = plantillaPush ? reemplazarVariables(plantillaPush.asunto) : '⚠️ Llamado de Atención';
+        const mensajePush = plantillaPush 
+          ? reemplazarVariables(plantillaPush.mensaje_base) 
+          : `Tienes una novedad de convivencia reportada para tu inmueble (${residenteSeleccionado.inmueble || 'S/N'}).`;
+
+        await supabase.functions.invoke('enviar_push', {
+          body: { titulo: tituloPush, mensaje: mensajePush, copropiedadId: copropiedadId, targetUserId: residenteSeleccionado.id }
+        });
+
+      } catch (notifError) {
+        console.error("Error silencioso en notificaciones de convivencia:", notifError);
+      }
+      // =========================================================================
+
+      Swal.fire('¡Enviado!', `El llamado de atención ha sido guardado y notificado al apartamento ${residenteSeleccionado.inmueble}.`, 'success');
       
       setNuevoLlamado({ usuario_id: '', motivo: '' });
       setBuscadorResidente('');

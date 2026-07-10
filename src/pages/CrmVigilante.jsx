@@ -7,7 +7,7 @@ import ModuloRecepcion from '../components/ModuloRecepcion';
 import Swal from 'sweetalert2';
 
 // =========================================================
-// 1. MÓDULO DE RECIBOS PÚBLICOS
+// 1. MÓDULO DE RECIBOS PÚBLICOS (ACTUALIZADO OMNICANAL)
 // =========================================================
 function ModuloRecibos({ turno }) {
   const [recibos, setRecibos] = useState({ Agua: false, Luz: false, Gas: false });
@@ -55,6 +55,49 @@ function ModuloRecibos({ turno }) {
         title: nuevoEstado ? `Aviso de ${tipo} Activado` : `Aviso de ${tipo} Desactivado`,
         showConfirmButton: false, timer: 2000
       });
+
+      // =========================================================================
+      // 🔥 MAGIA: DISPARAMOS EL PUSH MASIVO AL ACTIVAR EL SWITCH 🔥
+      // Al no incluir un targetUserId, OneSignal le envía un broadcast a todos 
+      // los residentes suscritos dentro de este copropiedadId.
+      // =========================================================================
+      if (nuevoEstado) {
+        try {
+          // Buscamos si la administración configuró una plantilla para 'RECIBOS_PUBLICOS'
+          const { data: plantilla } = await supabase
+            .from('plantillas_notificaciones')
+            .select('*')
+            .eq('copropiedad_id', turno.copropiedad_id)
+            .eq('tipo_evento', 'RECIBOS_PUBLICOS')
+            .eq('canal', 'push')
+            .eq('modulo_activo', true)
+            .maybeSingle();
+
+          // Textos por defecto por si el administrador no ha configurado la plantilla
+          let tituloPush = `🧾 Recibos de ${tipo} en Portería`;
+          let mensajePush = `Ya se encuentran disponibles los recibos públicos de ${tipo.toLowerCase()}. Pueden pasar a retirarlos.`;
+
+          // Si hay plantilla activa, reemplazamos la variable {tipo} dinámicamente
+          if (plantilla) {
+            tituloPush = plantilla.asunto.replace(/{tipo}/g, tipo);
+            mensajePush = plantilla.mensaje_base.replace(/{tipo}/g, tipo);
+          }
+
+          await supabase.functions.invoke('enviar_push', {
+            body: {
+              titulo: tituloPush,
+              mensaje: mensajePush,
+              copropiedadId: turno.copropiedad_id
+            }
+          });
+
+        } catch (pushError) {
+          console.error("Error mitigado enviando push masivo de recibos públicos:", pushError);
+        }
+      }
+      // =========================================================================
+
+      cargarEstadoRecibos();
     }
   };
 
@@ -104,7 +147,7 @@ function ModuloRecibos({ turno }) {
 }
 
 // =========================================================
-// 🔥 2. NUEVO MÓDULO: CONSULTA DE VEHÍCULOS Y RESIDENTES 🔥
+// 2. MÓDULO: CONSULTA DE VEHÍCULOS Y RESIDENTES
 // =========================================================
 function ModuloConsultaVehiculos({ turno }) {
   const [busqueda, setBusqueda] = useState('');
@@ -119,7 +162,6 @@ function ModuloConsultaVehiculos({ turno }) {
     setCargando(true);
     setBuscado(true);
     
-    // Buscamos en la base de datos (por placa O por inmueble)
     const { data, error } = await supabase
       .from('parqueaderos_asignados')
       .select('*')
@@ -136,7 +178,7 @@ function ModuloConsultaVehiculos({ turno }) {
 
   const limpiarBusqueda = () => {
     setBusqueda('');
-    setResultados([]);
+    textResultados([]);
     setBuscado(false);
   };
 
@@ -168,7 +210,6 @@ function ModuloConsultaVehiculos({ turno }) {
         )}
       </form>
 
-      {/* Resultados de la Búsqueda */}
       {buscado && !cargando && resultados.length === 0 && (
         <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-10 rounded-3xl text-center">
           <span className="text-5xl block mb-4">📭</span>
@@ -218,14 +259,14 @@ function ModuloConsultaVehiculos({ turno }) {
 }
 
 // =========================================================
-// 3. CÓDIGO PRINCIPAL DEL VIGILANTE
+// 3. CÓDIGO PRINCIPAL DEL CRM VIGILANTE
 // =========================================================
 export default function CRMVigilante() {
   const navigate = useNavigate();
   const [usuarioActual, setUsuarioActual] = useState(null);
   const [cargandoApp, setCargandoApp] = useState(true);
   const [turnoActivo, setTurnoActivo] = useState(null);
-  const [vista, setVista] = useState('menu'); // 'menu', 'parqueadero', 'recepcion', 'recibos', 'consulta'
+  const [vista, setVista] = useState('menu'); 
 
   useEffect(() => {
     validarSesion();
@@ -270,12 +311,11 @@ export default function CRMVigilante() {
       cancelButtonText: 'Cancelar' 
     });
     if (isConfirmed) { 
-
-      // 🔥 AQUÍ VA EL CANDADO DE SEGURIDAD
-      window.OneSignalDeferred.push(function(OneSignal) {
-      OneSignal.logout();
-    });
-
+      if (window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(function(OneSignal) {
+          OneSignal.logout();
+        });
+      }
       await supabase.auth.signOut(); 
       sessionStorage.clear(); 
       localStorage.clear(); 
@@ -328,7 +368,7 @@ export default function CRMVigilante() {
         </div>
       </nav>
 
-      <main className="p-6 max-w-7xl mx-auto">
+      <nav className="p-6 max-w-7xl mx-auto">
         {vista === 'menu' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-10">
             
@@ -344,7 +384,6 @@ export default function CRMVigilante() {
               <p className="text-slate-400 text-xs text-center mt-3 font-medium">Registro de paquetes y peatones.</p>
             </button>
 
-            {/* 🔥 NUEVO BOTÓN: CONSULTA DE VEHÍCULOS 🔥 */}
             <button onClick={() => setVista('consulta')} className="bg-white p-8 rounded-3xl shadow-xl border-b-8 border-transparent hover:border-indigo-500 transition-all flex flex-col items-center group active:scale-95">
               <div className="text-5xl mb-6 bg-slate-50 w-20 h-20 flex items-center justify-center rounded-full group-hover:bg-indigo-50 transition-colors">🔍</div>
               <span className="text-xl font-black text-slate-800 uppercase tracking-tighter text-center">Consulta Parqueadero</span>
@@ -372,7 +411,7 @@ export default function CRMVigilante() {
             {vista === 'recibos' && <ModuloRecibos turno={turnoActivo} />}
             {vista === 'consulta' && <ModuloConsultaVehiculos turno={turnoActivo} />}
         </div>
-      </main>
+      </nav>
     </div>
   );
 }

@@ -28,9 +28,9 @@ const MODULOS_CONFIG = {
     label: '🛠️ Respuestas a PQRS', 
     vars: '{nombre}, {inmueble}, {numero_ticket}, {estado}' 
   },
-  'MASIVO': { 
-    label: '📢 Comunicados Masivos / Recibos', 
-    vars: '{nombre}, {inmueble}, {mes_facturacion}' 
+  'FACTURA_PARQUEADERO': {  // 🔥 AQUÍ REEMPLAZAMOS "MASIVO" POR LA FACTURA 🔥
+    label: '🧾 Factura/Cobro de Parqueadero', 
+    vars: '{placa}, {tiempo}, {gracia}, {iva}, {total}, {detalle_tabla}' 
   }
 };
 
@@ -235,7 +235,7 @@ export default function ConfiguracionNotificaciones({ copropiedadId }) {
               <textarea 
                 name="mensaje_base" 
                 rows={tabActivo === 'email' ? "6" : "3"} 
-                placeholder={`Hola {nombre}, te confirmamos que al inmueble {inmueble} se le asignó...`} 
+                placeholder={`Escribe aquí el texto...`} 
                 value={form.mensaje_base} 
                 onChange={handleInputChange}
                 className="w-full border border-blue-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none font-medium text-slate-700 shadow-inner"

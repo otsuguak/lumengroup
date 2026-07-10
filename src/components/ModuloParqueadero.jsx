@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import Swal from 'sweetalert2';
+import { generarCascaronHTML } from '../utils/plantillas'; // 🔥 IMPORTAMOS LA FÁBRICA
 
 export default function ModuloParqueadero({ turno }) {
   // Pestañas de la vista del guarda
   const [pestanaActiva, setPestanaActiva] = useState('adentro');
 
-  // 🔥 NUEVO ESTADO PARA EL OJITO (Mostrar/Ocultar dinero) 🔥
+  // ESTADO PARA EL OJITO (Mostrar/Ocultar dinero)
   const [mostrarValores, setMostrarValores] = useState(false);
 
   // Estados del Formulario de Ingreso
@@ -133,7 +134,7 @@ export default function ModuloParqueadero({ turno }) {
           <h3 class="text-3xl text-red-600 font-black mt-4 mb-4">A COBRAR: $${totalPagar.toLocaleString()}</h3>
           
           <div class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
-            <label class="block text-sm font-bold text-gray-700 mb-2">¿Enviar factura electrónica?</label>
+            <label class="block text-sm font-bold text-gray-700 mb-2">¿Enviar factura de cobro?</label>
             <input id="swal-correo-factura" type="email" class="w-full p-3 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm" placeholder="Opcional: correo@cliente.com">
           </div>
         </div>
@@ -169,15 +170,24 @@ export default function ModuloParqueadero({ turno }) {
 
       if (!error) {
         
-        // ==========================================
-        // 🚀 AQUÍ SE DISPARA LA MAGIA DE RESEND
-        // ==========================================
+        // =========================================================================
+        // 🔥 CONEXIÓN AL CENTRALIZADOR DE PLANTILLAS PARA LA FACTURA 🔥
+        // =========================================================================
         if (correoDestino) {
-          const htmlFactura = `
-            <div style="font-family: Arial, sans-serif; padding: 20px; max-w: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px;">
-              <h2 style="color: #4f46e5; text-align: center;">Recibo de Parqueadero 🚗</h2>
-              <p>Hola, gracias por visitarnos. Aquí tienes el resumen de tu estadía:</p>
-              <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+          try {
+            // Buscamos si el admin configuró una plantilla
+            const { data: plantillasActivas } = await supabase
+              .from('plantillas_notificaciones')
+              .select('*')
+              .eq('copropiedad_id', turno.copropiedad_id)
+              .eq('tipo_evento', 'FACTURA_PARQUEADERO')
+              .eq('canal', 'email')
+              .eq('modulo_activo', true)
+              .maybeSingle();
+
+            // Quitamos los saltos de línea a la tabla para que generarCascaronHTML no la rompa
+            const tablaHTML = `
+              <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px;">
                 <tr style="background-color: #f8fafc;">
                   <td style="padding: 10px; border: 1px solid #e2e8f0;"><b>Placa:</b></td>
                   <td style="padding: 10px; border: 1px solid #e2e8f0;">${vehiculo.placa}</td>
@@ -199,26 +209,46 @@ export default function ModuloParqueadero({ turno }) {
                   <td style="padding: 10px; border: 1px solid #e2e8f0; font-size: 18px; font-weight: bold; color: #10b981;">$${totalPagar.toLocaleString()}</td>
                 </tr>
               </table>
-              <p style="text-align: center; margin-top: 30px; font-size: 12px; color: #94a3b8;">
-                Enviado automáticamente por el Sistema de Seguridad.
-              </p>
-            </div>
-          `;
+            `.replace(/\n/g, ''); // TRUCO VITAL
 
-          // LLAMADA A TU FUNCIÓN DE RESEND
-          supabase.functions.invoke('resend-correo', {
-            body: { 
-              bcc: [correoDestino], 
-              asunto: `Recibo de Parqueadero - Placa ${vehiculo.placa}`, 
-              mensaje: htmlFactura 
-            }
-          });
+            const reemplazarVariables = (texto) => {
+              if (!texto) return '';
+              return texto
+                .replace(/{placa}/g, vehiculo.placa)
+                .replace(/{tiempo}/g, `${diffMinutos}`)
+                .replace(/{gracia}/g, `${tarifaAplicar?.minutos_gracia || 0}`)
+                .replace(/{iva}/g, `$${ivaCalculado.toLocaleString()}`)
+                .replace(/{total}/g, `$${totalPagar.toLocaleString()}`)
+                .replace(/{detalle_tabla}/g, tablaHTML);
+            };
 
-          Swal.fire('¡Transacción Exitosa!', `Recibo enviado a ${correoDestino}`, 'success');
+            const asuntoEmail = plantillasActivas ? reemplazarVariables(plantillasActivas.asunto) : `Recibo de Parqueadero - Placa ${vehiculo.placa}`;
+            const remitenteEmail = plantillasActivas?.nombre_remitente || 'Caja de Parqueadero';
+            const textoBaseEmail = plantillasActivas 
+              ? reemplazarVariables(plantillasActivas.mensaje_base) 
+              : `Hola, gracias por visitarnos. Aquí tienes el resumen de tu estadía:\n\n${tablaHTML}\n\nEnviado automáticamente por el Sistema de Seguridad.`;
+
+            // Envolvemos el recibo (ya sea el por defecto o el del admin) en nuestro diseño elegante
+            const htmlFinal = generarCascaronHTML(asuntoEmail, textoBaseEmail);
+
+            await supabase.functions.invoke('resend-correo', {
+              body: { 
+                bcc: [correoDestino], 
+                asunto: asuntoEmail, 
+                mensaje: htmlFinal,
+                html: htmlFinal
+              }
+            });
+
+            Swal.fire('¡Transacción Exitosa!', `Recibo enviado a ${correoDestino}`, 'success');
+          } catch (notifError) {
+            console.error("Error procesando recibo:", notifError);
+            Swal.fire('¡Transacción Exitosa!', 'Cobro registrado, pero el correo no salió.', 'success');
+          }
         } else {
           Swal.fire('¡Transacción Exitosa!', 'Cobro registrado en tu caja.', 'success');
         }
-        // ==========================================
+        // =========================================================================
 
         cargarDatosPrincipales(); 
       } else {
@@ -282,7 +312,7 @@ export default function ModuloParqueadero({ turno }) {
         {/* PANEL DERECHO: PESTAÑAS (ADENTRO vs HISTORIAL) */}
         <div className="xl:col-span-2 flex flex-col space-y-4">
           
-          {/* 🔥 TOTALIZADOR DE CAJA DEL TURNO CON OJITO 🔥 */}
+          {/* TOTALIZADOR DE CAJA DEL TURNO CON OJITO */}
           <div className="bg-emerald-500 rounded-2xl shadow-lg p-6 flex justify-between items-center text-white">
             <div>
               <h3 className="text-emerald-100 font-bold uppercase text-sm tracking-wider">Caja Actual de tu Turno</h3>
@@ -371,7 +401,6 @@ export default function ModuloParqueadero({ turno }) {
                           <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
                             {h.correo_visitante ? <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs">✔️ Enviada</span> : <span className="text-gray-400 text-xs">Físico</span>}
                           </td>
-                          {/* 🔥 VALOR OCULTO CON EL OJITO 🔥 */}
                           <td className="px-4 py-3 whitespace-nowrap text-right font-black text-emerald-600">
                             {mostrarValores ? `$${Number(h.valor_total).toLocaleString()}` : '••••••'}
                           </td>
@@ -389,4 +418,4 @@ export default function ModuloParqueadero({ turno }) {
       </div>
     </div>
   );
-} 
+}
