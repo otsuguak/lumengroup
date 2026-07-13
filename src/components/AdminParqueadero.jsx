@@ -660,7 +660,6 @@ export default function AdminParqueadero({ copropiedadId }) {
           </div>
         </div>
       )}
-
     </div>
   );
 }
