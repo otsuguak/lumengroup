@@ -22,6 +22,10 @@ export default function Login() {
   const [aceptaHabeas, setAceptaHabeas] = useState(false);
   const [aceptaTratamiento, setAceptaTratamiento] = useState(false);
 
+  // 🔥 NUEVOS ESTADOS: Ojito de contraseña y Botón de instalación PWA
+  const [mostrarPassword, setMostrarPassword] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+
   const [config, setConfig] = useState({
     logo: '', 
     tituloHero: 'LumenGroup', 
@@ -45,7 +49,17 @@ export default function Login() {
 
     iniciarMotorSaaS();
 
-    return () => subscription.unsubscribe();
+    // 🔥 EVENTO PARA ATRAPAR LA INSTALACIÓN DE LA PWA
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, []);
 
   const iniciarMotorSaaS = async () => {
@@ -74,21 +88,22 @@ export default function Login() {
 
       if (idActual) {
         const { data: confData } = await supabase.from('configuracion').select('*').eq('copropiedad_id', idActual).maybeSingle();
-        if (confData) {
-          setConfig({
-            logo: confData.login_logo || '',
-            tituloHero: confData.login_titulo_hero || 'LumenGroup',
-            descHero: confData.login_desc_hero || 'Ecosistema inteligente para copropiedades.',
-            tituloForm: confData.login_titulo_form || 'Login',
-            nombreEmpresa: confData.login_nombre_empresa || 'LumenGroup',
-            color1: confData.login_color_1 || '#8b5cf6',
-            color2: confData.login_color_2 || '#3b82f6',
-            colorFondo: confData.login_color_fondo || '#0a0f1c',
-            requiere_codigo: confData.requiere_codigo ?? true,
-            codigo_secreto: confData.codigo_secreto_registro || '',
-            permitirRegistro: registroPermitido 
-          });
-        }
+        
+        // 🔥 AJUSTE CLAVE: Se actualiza el estado independientemente de si hay confData o no,
+        // asegurando que mod_registro SIEMPRE apague o encienda el texto de registro.
+        setConfig({
+          logo: confData?.login_logo || '',
+          tituloHero: confData?.login_titulo_hero || 'LumenGroup',
+          descHero: confData?.login_desc_hero || 'Ecosistema inteligente para copropiedades.',
+          tituloForm: confData?.login_titulo_form || 'Login',
+          nombreEmpresa: confData?.login_nombre_empresa || 'LumenGroup',
+          color1: confData?.login_color_1 || '#8b5cf6',
+          color2: confData?.login_color_2 || '#3b82f6',
+          colorFondo: confData?.login_color_fondo || '#0a0f1c',
+          requiere_codigo: confData?.requiere_codigo ?? true,
+          codigo_secreto: confData?.codigo_secreto_registro || '',
+          permitirRegistro: registroPermitido 
+        });
       }
     } catch (error) {
       console.error("Error al detectar entorno SaaS:", error);
@@ -210,6 +225,7 @@ export default function Login() {
   const registrarUsuario = async (e) => {
     e.preventDefault();
     
+    // Doble validación: por si intentan entrar forzando la vista
     if (!config.permitirRegistro) {
         return Swal.fire('Registro Deshabilitado', 'La administración ha deshabilitado el registro de nuevos usuarios.', 'error');
     }
@@ -286,6 +302,7 @@ export default function Login() {
       
       setEmail('');
       setPassword('');
+      setMostrarPassword(false);
       setVista('login');
       
     } catch (error) {
@@ -333,9 +350,20 @@ export default function Login() {
       await supabase.auth.signOut();
       setVista('login'); 
       setPassword('');
+      setMostrarPassword(false);
     } catch (err) { 
       Swal.fire('Error', err.message, 'error'); 
     } finally { setCargando(false); }
+  };
+
+  // 🔥 FUNCIÓN PARA INSTALAR LA APP MANUALMENTE
+  const instalarPWA = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
   };
 
   const abrirModalHabeasData = (e) => {
@@ -404,13 +432,39 @@ export default function Login() {
         {/* MITAD IZQUIERDA */}
         <div className="w-full md:w-1/2 p-8 md:p-14 flex flex-col justify-center relative z-20 max-h-[90vh] overflow-y-auto esconder-scroll">
           
-          <div className="mb-6 flex justify-center md:justify-start items-center h-12">
+          {/* 🔥 BOTÓN NIVEL DIOS PARA VOLVER A LA CARTELERA */}
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="absolute top-6 left-6 flex items-center gap-3 text-white/50 hover:text-white transition-all duration-500 group z-50 focus:outline-none"
+            title="Volver a la cartelera"
+          >
+            <div className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center backdrop-blur-md group-hover:bg-[var(--neon-primario)]/20 group-hover:border-[var(--neon-primario)] group-hover:shadow-[0_0_15px_-3px_var(--neon-primario)] transition-all duration-500">
+              <svg className="w-4 h-4 transform group-hover:-translate-x-1 transition-transform duration-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </div>
+            <span className="text-[10px] font-bold tracking-widest uppercase opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-500 hidden sm:block">
+              Inicio
+            </span>
+          </button>
+
+          {/* Ajustamos el margin para que el botón Inicio respire bien en móviles */}
+          <div className="mb-6 mt-10 md:mt-0 flex justify-between items-center h-12">
             {config.logo ? (
               <img src={config.logo} alt="Logo" className="max-h-full object-contain" />
             ) : (
               <h2 className="text-2xl font-black text-white tracking-tight">
                 {config.nombreEmpresa.split(' ')[0]}<span className="texto-neon">{config.nombreEmpresa.split(' ').slice(1).join(' ')}</span>
               </h2>
+            )}
+
+            {/* 🔥 BOTÓN DE INSTALAR APP (Solo aparece si el navegador lo permite) */}
+            {installPrompt && (
+              <button onClick={instalarPWA} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 text-white text-xs font-bold transition-all focus:outline-none">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Instalar App
+              </button>
             )}
           </div>
 
@@ -428,19 +482,31 @@ export default function Login() {
                 <label className="text-xs font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Email</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full input-linea" placeholder="usuario@correo.com" required />
               </div>
-              <div>
+              
+              {/* 🔥 PASSWORD CON OJITO EN LOGIN */}
+              <div className="relative">
                 <label className="text-xs font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea" placeholder="••••••••" required />
+                <input type={mostrarPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea pr-10" placeholder="••••••••" required />
+                <button type="button" onClick={() => setMostrarPassword(!mostrarPassword)} className="absolute right-0 bottom-2 text-white/50 hover:text-white transition-colors focus:outline-none">
+                  {mostrarPassword ? (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                  )}
+                </button>
               </div>
+
               <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-6 transition-transform hover:scale-[1.02] disabled:opacity-50">
                 {cargando ? 'Iniciando...' : 'Entrar'}
               </button>
+              
               <div className="text-center mt-6 flex flex-col gap-3">
-                {/* 🔥 AQUÍ ESTÁ LA MAGIA: Oculta la opción si el admin la apagó */}
                 {config.permitirRegistro && (
-                  <p className="text-white/60 text-sm">¿No tienes cuenta? <button type="button" onClick={() => {setVista('registro'); setEmail(''); setPassword('');}} className="texto-neon font-bold hover:underline">Regístrate</button></p>
+                  <p className="text-white/60 text-sm">
+                    ¿No tienes cuenta? <button type="button" onClick={() => {setVista('registro'); setEmail(''); setPassword(''); setMostrarPassword(false);}} className="texto-neon font-bold hover:underline">Regístrate</button>
+                  </p>
                 )}
-                <button type="button" onClick={() => {setVista('recuperar'); setEmail(''); setPassword('');}} className="text-white/40 text-xs hover:text-white transition-colors">¿Olvidaste tu contraseña?</button>
+                <button type="button" onClick={() => {setVista('recuperar'); setEmail(''); setPassword(''); setMostrarPassword(false);}} className="text-white/40 text-xs hover:text-white transition-colors">¿Olvidaste tu contraseña?</button>
               </div>
             </form>
           )}
@@ -465,7 +531,19 @@ export default function Login() {
               </div>
 
               <div><label className="text-[10px] font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Correo Electrónico</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full input-linea" required /></div>
-              <div><label className="text-[10px] font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Contraseña</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea" placeholder="Mínimo 8 caracteres" required minLength={8} /></div>
+              
+              {/* 🔥 PASSWORD CON OJITO EN REGISTRO */}
+              <div className="relative">
+                <label className="text-[10px] font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Contraseña</label>
+                <input type={mostrarPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea pr-10" placeholder="Mínimo 8 caracteres" required minLength={8} />
+                <button type="button" onClick={() => setMostrarPassword(!mostrarPassword)} className="absolute right-0 bottom-2 text-white/50 hover:text-white transition-colors focus:outline-none">
+                  {mostrarPassword ? (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                  )}
+                </button>
+              </div>
               
               <div className="mt-6 space-y-3 bg-black/30 p-4 rounded-xl border border-white/10">
                 <label className="flex items-start gap-3 cursor-pointer group">
@@ -499,7 +577,7 @@ export default function Login() {
               </div>
               
               <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-4 transition-transform hover:scale-[1.02] disabled:opacity-50">Crear Cuenta</button>
-              <div className="text-center mt-4 pb-2"><button type="button" onClick={() => setVista('login')} className="texto-neon font-bold hover:underline text-sm">Volver al Login</button></div>
+              <div className="text-center mt-4 pb-2"><button type="button" onClick={() => {setVista('login'); setMostrarPassword(false);}} className="texto-neon font-bold hover:underline text-sm">Volver al Login</button></div>
             </form>
           )}
 
@@ -522,10 +600,20 @@ export default function Login() {
           {vista === 'restablecer' && (
             <form onSubmit={actualizarClave} className="space-y-6 animate-in fade-in duration-300">
               <p className="text-white/70 text-sm">Ingresa tu nueva contraseña para acceder.</p>
-              <div>
+              
+              {/* 🔥 PASSWORD CON OJITO EN RESTABLECER */}
+              <div className="relative">
                 <label className="text-xs font-semibold texto-neon opacity-80 mb-1 block tracking-widest uppercase">Nueva Contraseña</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea" placeholder="Mínimo 8 caracteres" required minLength={8} />
+                <input type={mostrarPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full input-linea pr-10" placeholder="Mínimo 8 caracteres" required minLength={8} />
+                <button type="button" onClick={() => setMostrarPassword(!mostrarPassword)} className="absolute right-0 bottom-2 text-white/50 hover:text-white transition-colors focus:outline-none">
+                  {mostrarPassword ? (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                  )}
+                </button>
               </div>
+
               <button type="submit" disabled={cargando} className="w-full btn-neon text-white font-bold py-3.5 rounded-full mt-4">
                 {cargando ? 'Guardando...' : 'Cambiar Contraseña'}
               </button>
