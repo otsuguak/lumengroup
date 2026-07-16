@@ -1,30 +1,39 @@
-// 🔥 IMPORTANTE: OneSignal debe ser la primera línea para que funcione bien
+// 🔥 IMPORTANTE: OneSignal debe ser la primera línea
 importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 
-// Lumen Habitat - Service Worker Básico
-const CACHE_NAME = 'lumenGroup-v2';
+// Bautizamos la nueva era
+const CACHE_NAME = 'vecinia-v1';
 
 self.addEventListener('install', (event) => {
-  console.log('[Lumen SW] Instalado con éxito');
+  console.log('[Vecinia SW] Instalado con éxito');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[Lumen SW] Activado');
-  event.waitUntil(clients.claim());
+  console.log('[Vecinia SW] Activado y limpiando basura vieja...');
+  
+  // 🔥 LA ESCOBA MÁGICA: Esto busca memorias viejas y las ELIMINA
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          // Si el nombre del caché no es exactamente igual al nuevo, lo borra
+          if (cacheName !== CACHE_NAME) {
+            console.log('[Vecinia SW] Borrando caché viejo:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
-// Interceptor de peticiones para cumplir el requisito PWA de Google
+// Interceptor de peticiones
 self.addEventListener('fetch', (event) => {
-  
-  // 🔥 LA REGLA DE ORO PARA SALVAR TUS EDGE FUNCTIONS 🔥
-  // Si la petición NO es GET (como los POST a Supabase) o va a supabase.co,
-  // el vigilante la ignora y deja que pase directo a internet.
   if (event.request.method !== 'GET' || event.request.url.includes('supabase.co')) {
     return; 
   }
 
-  // Comportamiento original para PWA
   event.respondWith(
     fetch(event.request).catch(() => {
       return caches.match(event.request);

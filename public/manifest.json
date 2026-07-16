@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "LumenGroup Portal",
-  "short_name": "vecinia",
+  "name": "Vecinia",
+  "short_name": "Vecinia",
   "description": "Ecosistema Inteligente para Copropiedades",
   "start_url": "/",
   "display": "standalone",
