@@ -1,7 +1,7 @@
 {
   "id": "/",
   "name": "LumenGroup Portal",
-  "short_name": "LumenGroup",
+  "short_name": "vecinia",
   "description": "Ecosistema Inteligente para Copropiedades",
   "start_url": "/",
   "display": "standalone",
@@ -10,16 +10,28 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icon-192x192.png?v=2",
+      "src": "/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/icon-512x512.png?v=2",
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
