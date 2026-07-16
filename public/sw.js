@@ -2,7 +2,7 @@
 importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 
 // Bautizamos la nueva era
-const CACHE_NAME = 'vecinia-v2';
+const CACHE_NAME = 'vecinia-v3';
 
 self.addEventListener('install', (event) => {
   console.log('[Vecinia SW] Instalado con éxito');
