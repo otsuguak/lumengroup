@@ -2,15 +2,15 @@
 importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 
 // Bautizamos la nueva era
-const CACHE_NAME = 'vecinia-v3';
+const CACHE_NAME = 'vecindaria-v1';
 
 self.addEventListener('install', (event) => {
-  console.log('[Vecinia SW] Instalado con éxito');
+  console.log('[Vecindaria SW] Instalado con éxito');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[Vecinia SW] Activado y limpiando basura vieja...');
+  console.log('[Vecindaria SW] Activado y limpiando basura vieja...');
   
   // 🔥 LA ESCOBA MÁGICA: Esto busca memorias viejas y las ELIMINA
   event.waitUntil(
@@ -19,7 +19,7 @@ self.addEventListener('activate', (event) => {
         cacheNames.map((cacheName) => {
           // Si el nombre del caché no es exactamente igual al nuevo, lo borra
           if (cacheName !== CACHE_NAME) {
-            console.log('[Vecinia SW] Borrando caché viejo:', cacheName);
+            console.log('[Vecindaria SW] Borrando caché viejo:', cacheName);
             return caches.delete(cacheName);
           }
         })

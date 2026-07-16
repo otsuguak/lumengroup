@@ -1,7 +1,7 @@
 {
-  "id": "/?v=veciniaOficial",
-  "name": "Vecinia",
-  "short_name": "Vecinia",
+  "id": "/?v=vecindariaOficial",
+  "name": "Vecindaria",
+  "short_name": "Vecindaria",
   "description": "Ecosistema Inteligente para Copropiedades",
   "start_url": "/",
   "display": "standalone",
@@ -10,25 +10,25 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/vecinia-192.png",
+      "src": "/vecindaria-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/vecinia-192.png",
+      "src": "/vecindaria-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/vecinia-512.png",
+      "src": "/vecindaria-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/vecinia-512.png",
+      "src": "/vecindaria-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
