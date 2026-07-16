@@ -2,7 +2,7 @@
 importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 
 // Lumen Habitat - Service Worker Básico
-const CACHE_NAME = 'lumen-habitat-v1';
+const CACHE_NAME = 'lumen-habitat-v3';
 
 self.addEventListener('install', (event) => {
   console.log('[Lumen SW] Instalado con éxito');
