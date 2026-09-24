@@ -58,7 +58,7 @@ function App() {
         <Route path="/gestion-clientes" element={ <ProtectedRoute><GestionClientes /></ProtectedRoute> } />
         <Route path="/propuesta-comercial" element={<Pitch />} />
         <Route path="/login-admin" element={<LoginAdmin />} />
-        <Route path="/dashboard-admin" element={<DashboardAdmin />} />
+        <Route path="/dashboard-admin" element={ <ProtectedRoute><DashboardAdmin /></ProtectedRoute> } />
         {/* Aquí agregaremos la de Cliente SaaS más adelante */}
         {/* <Route path="/clientes" element={ <ProtectedRoute><ClientesSaaS /></ProtectedRoute> } /> */}
       </Routes>

@@ -36,31 +36,39 @@ export default function Login() {
       return;
     }
 
-    console.log("✅ Acceso concedido para:", funcionario.nombre);
+    console.log("✅ Acceso concedido en tabla funcionarios para:", funcionario.nombre);
 
-    // 🚀 EL ENRUTADOR INTELIGENTE (BIFURCACIÓN DE CAMINOS)
+    // 🚀 EL ENRUTADOR INTELIGENTE (BLINDADO CONTRA ERRORES DE DATO)
     if (funcionario.nit) {
-      // Si tiene NIT, verificamos si cruza con alguna copropiedad
+      // Limpiamos espacios basura que puedan romper la igualdad
+      const nitLimpio = String(funcionario.nit).trim();
+      console.log(`🔍 Buscando copropiedad con NIT exacto: "${nitLimpio}"`);
+
+      // Usamos maybeSingle() para que no colapse si hay NITs duplicados en tus pruebas
       const { data: copropiedad, error: coproError } = await supabase
         .from('copropiedades')
         .select('id, cliente_saas_id')
-        .eq('nit', funcionario.nit)
-        .single();
+        .eq('nit', nitLimpio)
+        .maybeSingle(); 
 
-      if (copropiedad && !coproError) {
-        // Hizo match: Guardamos todas las llaves y lo mandamos al panel exclusivo
-        console.log("🏢 Administrador de conjunto detectado. Redirigiendo...");
-        sessionStorage.setItem('admin_nit', funcionario.nit);
+      console.log("📦 Resultado del cruce con copropiedades:", copropiedad);
+      if (coproError) console.log("⚠️ Error interno de Supabase al buscar:", coproError);
+
+      if (copropiedad) {
+        console.log("🏢 ¡MATCH EXACTO! Redirigiendo a Dashboard Admin...");
+        sessionStorage.setItem('admin_nit', nitLimpio);
         sessionStorage.setItem('admin_copropiedad_id', copropiedad.id);
         sessionStorage.setItem('admin_saas_id', copropiedad.cliente_saas_id);
         
         navigate('/dashboard-admin');
-        return; // 🛑 Cortamos la ejecución aquí para que no siga al otro dashboard
+        return; 
+      } else {
+        console.log("❌ FALLO: El NIT está en funcionarios, pero NO se encontró ninguna copropiedad con ese NIT exacto.");
       }
     }
 
-    // 3. Flujo Tradicional: Si no tiene NIT o no cruzó, va al panel de siempre
-    console.log("👤 Funcionario estándar detectado. Redirigiendo...");
+    // 3. Flujo Tradicional
+    console.log("👤 Funcionario estándar. Redirigiendo a Dashboard normal...");
     navigate('/dashboard');
   };
 
