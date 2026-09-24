@@ -30,12 +30,6 @@ export default function Login() {
       .eq('email', email) // Coincide con tu tabla
       .single();
 
-    // 🕵️‍♂️ LA TRAMPA: Imprimimos en la consola oculta exactamente lo que trajo la tabla
-    console.log("--- REPORTE DE EXTRACCIÓN FUNCIONARIOS_LUMEN ---");
-    console.log("Datos del funcionario encontrados:", funcionario);
-    console.log("Errores de lectura (si los hay):", dbError);
-    console.log("------------------------------------------------");
-
     if (dbError || !funcionario) {
       setError("No tienes permisos de acceso en la tabla de funcionarios.");
       await supabase.auth.signOut();
@@ -43,6 +37,7 @@ export default function Login() {
       console.log("✅ Acceso concedido para:", funcionario.nombre);
       
       // 🚀 EL TOQUE MAESTRO: Guardamos el NIT que agregaste en la base de datos
+      // para que el Dashboard sepa qué información cargar.
       sessionStorage.setItem('admin_nit', funcionario.nit);
       
       navigate('/dashboard');
