@@ -35,6 +35,11 @@ export default function Login() {
       await supabase.auth.signOut();
     } else {
       console.log("✅ Acceso concedido para:", funcionario.nombre);
+      
+      // 🚀 EL TOQUE MAESTRO: Guardamos el NIT que agregaste en la base de datos
+      // para que el Dashboard sepa qué información cargar.
+      sessionStorage.setItem('admin_nit', funcionario.nit);
+      
       navigate('/dashboard');
     }
   };
@@ -57,7 +62,7 @@ export default function Login() {
               required 
               className="mt-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-lumenPrimary outline-none transition-all"
               value={email}
-              onChange={(e) => setEmail(e.target.value)} // CORRECCIÓN AQUÍ
+              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
 
