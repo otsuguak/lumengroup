@@ -38,32 +38,29 @@ export default function Login() {
 
     console.log("✅ Acceso concedido en tabla funcionarios para:", funcionario.nombre);
 
-    // 🚀 EL ENRUTADOR INTELIGENTE (BLINDADO CONTRA ERRORES DE DATO)
-    if (funcionario.nit) {
-      // Limpiamos espacios basura que puedan romper la igualdad
-      const nitLimpio = String(funcionario.nit).trim();
-      console.log(`🔍 Buscando copropiedad con NIT exacto: "${nitLimpio}"`);
+    // 🚀 EL ENRUTADOR INTELIGENTE (AHORA USA TU IDEA DEL ID)
+    if (funcionario.copropiedad_id) {
+      console.log(`🔍 Buscando copropiedad con ID exacto: "${funcionario.copropiedad_id}"`);
 
-      // Usamos maybeSingle() para que no colapse si hay NITs duplicados en tus pruebas
+      // Usamos maybeSingle() y buscamos por ID, no por NIT
       const { data: copropiedad, error: coproError } = await supabase
         .from('copropiedades')
         .select('id, cliente_saas_id')
-        .eq('nit', nitLimpio)
+        .eq('id', funcionario.copropiedad_id)
         .maybeSingle(); 
 
       console.log("📦 Resultado del cruce con copropiedades:", copropiedad);
       if (coproError) console.log("⚠️ Error interno de Supabase al buscar:", coproError);
 
       if (copropiedad) {
-        console.log("🏢 ¡MATCH EXACTO! Redirigiendo a Dashboard Admin...");
-        sessionStorage.setItem('admin_nit', nitLimpio);
+        console.log("🏢 ¡MATCH EXACTO CON ID! Redirigiendo a Dashboard Admin...");
         sessionStorage.setItem('admin_copropiedad_id', copropiedad.id);
         sessionStorage.setItem('admin_saas_id', copropiedad.cliente_saas_id);
         
         navigate('/dashboard-admin');
         return; 
       } else {
-        console.log("❌ FALLO: El NIT está en funcionarios, pero NO se encontró ninguna copropiedad con ese NIT exacto.");
+        console.log("❌ FALLO: El ID está en funcionarios, pero NO cruzó. ¿Apagaste el RLS en Supabase?");
       }
     }
 
