@@ -11,6 +11,8 @@ import Copropiedades from './pages/Copropiedades';
 import ClientesSaaS from './pages/ClientesSaaS';
 import GestionClientes from './pages/GestionClientes';
 import Pitch from './pages/Pitch';
+import LoginAdmin from './pages/LoginAdmin';
+import DashboardAdmin from './pages/DashboardAdmin';
 
 // 🛡️ EL GUARDIA DE SEGURIDAD (COMPONENTE NUEVO)
 // Si no hay sesión, te patea de vuelta al login
@@ -55,6 +57,8 @@ function App() {
         <Route path="/clientes" element={ <ProtectedRoute><ClientesSaaS /></ProtectedRoute> } />
         <Route path="/gestion-clientes" element={ <ProtectedRoute><GestionClientes /></ProtectedRoute> } />
         <Route path="/propuesta-comercial" element={<Pitch />} />
+        <Route path="/login-admin" element={<LoginAdmin />} />
+        <Route path="/dashboard-admin" element={<DashboardAdmin />} />
         {/* Aquí agregaremos la de Cliente SaaS más adelante */}
         {/* <Route path="/clientes" element={ <ProtectedRoute><ClientesSaaS /></ProtectedRoute> } /> */}
       </Routes>
