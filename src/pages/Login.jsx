@@ -27,51 +27,71 @@ export default function Login() {
     const { data: funcionario, error: dbError } = await supabase
       .from('funcionarios_lumen')
       .select('*')
-      .eq('email', email) // Coincide con tu tabla
+      .eq('email', email)
       .single();
 
     if (dbError || !funcionario) {
       setError("No tienes permisos de acceso en la tabla de funcionarios.");
       await supabase.auth.signOut();
-    } else {
-      console.log("✅ Acceso concedido para:", funcionario.nombre);
-      
-      // 🚀 EL TOQUE MAESTRO: Guardamos el NIT que agregaste en la base de datos
-      // para que el Dashboard sepa qué información cargar.
-      sessionStorage.setItem('admin_nit', funcionario.nit);
-      
-      navigate('/dashboard');
+      return;
     }
+
+    console.log("✅ Acceso concedido para:", funcionario.nombre);
+
+    // 🚀 EL ENRUTADOR INTELIGENTE (BIFURCACIÓN DE CAMINOS)
+    if (funcionario.nit) {
+      // Si tiene NIT, verificamos si cruza con alguna copropiedad
+      const { data: copropiedad, error: coproError } = await supabase
+        .from('copropiedades')
+        .select('id, cliente_saas_id')
+        .eq('nit', funcionario.nit)
+        .single();
+
+      if (copropiedad && !coproError) {
+        // Hizo match: Guardamos todas las llaves y lo mandamos al panel exclusivo
+        console.log("🏢 Administrador de conjunto detectado. Redirigiendo...");
+        sessionStorage.setItem('admin_nit', funcionario.nit);
+        sessionStorage.setItem('admin_copropiedad_id', copropiedad.id);
+        sessionStorage.setItem('admin_saas_id', copropiedad.cliente_saas_id);
+        
+        navigate('/dashboard-admin');
+        return; // 🛑 Cortamos la ejecución aquí para que no siga al otro dashboard
+      }
+    }
+
+    // 3. Flujo Tradicional: Si no tiene NIT o no cruzó, va al panel de siempre
+    console.log("👤 Funcionario estándar detectado. Redirigiendo...");
+    navigate('/dashboard');
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
         <div className="text-center mb-8">
-          <h2 className="text-3xl font-extrabold text-lumenPrimary">LumenGroup</h2>
-          <p className="text-gray-500 mt-2">Portal Administrativo</p>
+          <h2 className="text-3xl font-extrabold text-blue-600">LumenGroup</h2>
+          <p className="text-gray-500 mt-2">Portal de Acceso</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
-          {error && <p className="bg-red-50 text-red-500 p-3 rounded-lg text-sm border border-red-100">{error}</p>}
+          {error && <p className="bg-red-50 text-red-500 p-3 rounded-lg text-sm border border-red-100 font-medium">{error}</p>}
           
           <div>
-            <label className="block text-sm font-medium text-gray-700">Correo Electrónico</label>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
             <input 
               type="email" 
               required 
-              className="mt-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-lumenPrimary outline-none transition-all"
+              className="mt-1 w-full p-4 border border-gray-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none transition-all"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Contraseña</label>
             <input 
               type="password" 
               required 
-              className="mt-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-lumenPrimary outline-none transition-all"
+              className="mt-1 w-full p-4 border border-gray-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none transition-all"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -79,7 +99,7 @@ export default function Login() {
 
           <button 
             type="submit"
-            className="w-full py-3 bg-lumenPrimary text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg transition-all"
+            className="w-full py-4 bg-blue-600 text-white rounded-xl font-black hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
           >
             Ingresar al Sistema
           </button>
